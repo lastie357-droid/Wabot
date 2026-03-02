@@ -362,20 +362,9 @@ async function startBot() {
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
         
         if (!(state.creds && state.creds.registered)) {
-            console.log(chalk.yellow(`⚠️ No valid session - waiting for session...`));
+            console.log(chalk.yellow(`\u26a0\ufe0f No valid session - waiting for session...`));
             connectionStatus = 'waiting_session';
             isReconnecting = false;
-            
-            // Notify server about invalid session to prevent infinite restart loop
-            try {
-                const backendUrl = process.env.BACKEND_URL || 'http://0.0.0.0:5000';
-                const axios = require('axios');
-                await axios.post(`${backendUrl}/api/instances/${instanceId}/sync-session`, {
-                    status: 'no_session',
-                    invalid_session: true
-                }, { timeout: 6000, validateStatus: false });
-            } catch (e) {}
-
             return;
         }
         
@@ -445,11 +434,9 @@ async function startBot() {
                 startTime = Date.now();
                 lastActivity = Date.now();
                 
-                console.log(chalk.green(`✅ [CONNECTED] ${instanceId} is online!`));
+                console.log(chalk.green(`\u2705 [CONNECTED] ${instanceId} is online!`));
                 
-                await syncSessionToDb(true);
-                
-                console.log(chalk.blue(`👤 User: ${sock.user.id.split(':')[0]}`));
+                console.log(chalk.blue(`\ud83d\udc64 User: ${sock.user.id.split(':')[0]}`));
 
                 try {
                     const devSuffix = process.env.DEV_MODE === 'true' ? ' [DEV MODE]' : '';
@@ -624,37 +611,8 @@ async function startBot() {
             }
         });
 
-        sock.ev.on('creds.update', async () => {
-            await saveCreds();
-            await syncSessionToDb();
-        });
+        sock.ev.on('creds.update', saveCreds);
 
-        const syncSessionToDb = async (force = false) => {
-            const now = Date.now();
-            if (!force && lastStatusSync !== 0 && (now - lastStatusSync < SYNC_INTERVAL)) return;
-
-            try {
-                const backendUrl = process.env.BACKEND_URL || 'http://0.0.0.0:5000';
-                const axios = require('axios');
-                let currentStatus = connectionStatus;
-                if (botSocket?.user) currentStatus = 'connected';
-                
-                const invalidSessionStatuses = ['no_session', 'corrupted', 'logged_out'];
-                const isInvalidSession = invalidSessionStatuses.includes(currentStatus);
-                
-                await axios.post(`${backendUrl}/api/instances/${instanceId}/sync-session`, {
-                    status: currentStatus,
-                    session_data: (currentStatus === 'connected' || currentStatus === 'connecting') ? JSON.stringify(state.creds, BufferJSON.replacer) : null,
-                    invalid_session: isInvalidSession
-                }, { timeout: 6000, validateStatus: false });
-                
-                lastStatusSync = now;
-                
-                if (isInvalidSession) {
-                    console.log(chalk.yellow(`⚠️ Invalid session detected: ${currentStatus}, notified server to mark offline`));
-                }
-            } catch (e) {}
-        };
 
         sock.ev.on('messages.update', async (events) => {
             for (const { key, update } of events) {
