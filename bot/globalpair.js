@@ -102,20 +102,6 @@ router.get('/', async (req, res) => {
                         }
                         console.log("📁 Session files copied to bot directory");
 
-                        // Sync session to database
-                        try {
-                            const sessionData = fs.readFileSync(dirs + '/creds.json', 'utf-8');
-                            const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
-                            await axios.post(`${backendUrl}/api/instances/${instanceId}/sync-session`, {
-                                status: 'connected',
-                                session_data: sessionData,
-                                invalid_session: false
-                            }, { timeout: 10000 });
-                            console.log("💾 Session synced to database");
-                        } catch (e) {
-                            console.error("Failed to sync session to DB:", e.message);
-                        }
-
                         // Send session file to user
                         const sessionKnight = fs.readFileSync(dirs + '/creds.json');
                         const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
