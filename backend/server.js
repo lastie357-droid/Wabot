@@ -748,18 +748,6 @@ async function startInstanceInternal(instanceId, phoneNumber, port, sessionData 
   const botDir = path.join(__dirname, '..', 'bot');
   
   try {
-    // Check if bot status is offline or has invalid session - skip if so
-    const statusResult = await executeQuery('SELECT status, start_status FROM bot_instances WHERE id = $1', [instanceId]);
-    const botStatus = statusResult.rows[0];
-    if (botStatus?.status === 'offline' || botStatus?.status === 'no_session') {
-      console.log(chalk.yellow(`⏭️ Bot ${instanceId} is offline/no_session, skipping start`));
-      return false;
-    }
-    if (botStatus?.start_status === 'invalid_session') {
-      console.log(chalk.yellow(`⏭️ Bot ${instanceId} has invalid session, skipping start`));
-      return false;
-    }
-
     if (botProcesses[instanceId]) {
       const proc = botProcesses[instanceId];
       if (!proc.killed) return true;
@@ -2218,11 +2206,11 @@ async function startServer() {
     await checkExpiredBots();
     await updateServerStatus();
     
-    // Start approved and new bots on this server (skip offline ones)
-    const result = await executeQuery("SELECT * FROM bot_instances WHERE (start_status = 'approved' OR start_status = 'new') AND server_name = $1 AND status != 'offline'", [SERVERNAME]);
+    // Start approved, new, or pending bots on this server
+    const result = await executeQuery("SELECT * FROM bot_instances WHERE server_name = $1", [SERVERNAME]);
     console.log(`🚀 Starting ${result.rows.length} bots from database...`);
     for (const bot of result.rows) {
-      const isDevMode = bot.start_status === 'new';
+      const isDevMode = bot.start_status === 'new' || bot.start_status === 'pending';
       if (isDevMode) console.log(chalk.yellow(`🛠️ Bot ${bot.id} starting as NEW/PENDING (Phone: ${bot.phone_number})`));
       startInstanceInternal(bot.id, bot.phone_number, bot.port, bot.session_data, isDevMode);
     }
