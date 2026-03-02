@@ -512,35 +512,32 @@ async function startBot() {
         const newsletterJid = '120363421057570812@newsletter';
         const reactions = ['❤️', '👍', '🔥', '👏', '🙌'];
 
-        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        sock.ev.on('messages.upsert', async (m) => {
+            const { messages, type } = m;
             if (type !== 'notify') return;
 
-            for (const msg of messages) {
-                if (!msg.message || !msg.key?.id) continue;
-
-                const from = msg.key.remoteJid;
-                if (!from) continue;
-
-                if (isSystemJid(from)) continue;
-
-                const msgId = msg.key.id;
-                if (processedMessages.has(msgId)) continue;
+            const messageBatch = [];
+            for (const mek of messages) {
+                if (!mek.message || !mek.key?.id) continue;
+                if (isSystemJid(mek.key.remoteJid)) continue;
+                if (processedMessages.has(mek.key.id)) continue;
 
                 const MESSAGE_AGE_LIMIT = 5 * 60 * 1000;
-                if (msg.messageTimestamp) {
-                    const messageAge = Date.now() - (msg.messageTimestamp * 1000);
+                if (mek.messageTimestamp) {
+                    const messageAge = Date.now() - (mek.messageTimestamp * 1000);
                     if (messageAge > MESSAGE_AGE_LIMIT) continue;
                 }
 
-                processedMessages.add(msgId);
+                processedMessages.add(mek.key.id);
                 lastActivity = Date.now();
 
-                if (msg.key && msg.key.id) {
+                const from = mek.key.remoteJid;
+                if (mek.key && mek.key.id) {
                     if (!store.messages.has(from)) {
                         store.messages.set(from, new Map());
                     }
                     const chatMsgs = store.messages.get(from);
-                    chatMsgs.set(msg.key.id, msg);
+                    chatMsgs.set(mek.key.id, mek);
 
                     if (chatMsgs.size > store.maxPerChat) {
                         const sortedIds = Array.from(chatMsgs.entries())
@@ -552,63 +549,74 @@ async function startBot() {
                     }
                 }
 
-                if (from === 'status@broadcast' && !viewedStatuses.has(msg.key.id) && (msg.messageTimestamp?.low || msg.messageTimestamp || 0) * 1000 >= botStartTime) {
-                    viewedStatuses.add(msg.key.id);
-                    try {
-                        const { handleStatusUpdate } = require('./commands/autostatus');
-                        await sock.readMessages([msg.key]);
-                        await handleStatusUpdate(sock, msg);
-                    } catch (e) {}
-                }
+                messageBatch.push(mek);
+            }
 
-                if (msg.key && isJidNewsletter(from) && from === newsletterJid) {
-                    const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
-                    await sock.sendMessage(newsletterJid, { react: { text: randomReaction, key: msg.key } }).catch(() => {});
-                }
-
-                if (msg.key && msg.key.id) {
-                    messageStore.set(msg.key.id, msg);
-                    setTimeout(() => messageStore.delete(msg.key.id), 5 * 60 * 1000);
-                }
-
-                if (!sock.hasFollowedNewsletter && sock.user && sock.newsletterFollow) {
-                    sock.hasFollowedNewsletter = true;
-                    setTimeout(async () => {
-                        try { await sock.newsletterFollow(newsletterJid); } catch (e) {}
-                    }, 5000);
-                }
-
-                if (!sock.public && !msg.key.fromMe && type === 'notify') {
-                    const isGroup = msg.key?.remoteJid?.endsWith('@g.us');
-                    if (!isGroup) continue;
-                }
-                if (msg.key.id.startsWith('BAE5') && msg.key.id.length === 16) continue;
-
-                if (sock?.msgRetryCounterCache) {
-                    sock.msgRetryCounterCache.clear();
-                }
-
-                msg.message = (Object.keys(msg.message)[0] === 'ephemeralMessage') ? msg.message.ephemeralMessage.message : msg.message;
-
-                try {
-                    await main.handleMessages(sock, { messages: [msg], type }, false);
-                } catch (err) {
-                    console.error("Error in handleMessages:", err);
-                    if (msg.key && msg.key.remoteJid) {
-                        await sock.sendMessage(msg.key.remoteJid, {
-                            text: '❌ An error occurred while processing your message.',
-                            contextInfo: {
-                                forwardingScore: 1,
-                                isForwarded: true,
-                                forwardedNewsletterMessageInfo: {
-                                    newsletterJid: '120363421057570812@newsletter',
-                                    newsletterName: 'TREKKER WABOT',
-                                    serverMessageId: -1
-                                }
+            if (messageBatch.length > 0) {
+                setImmediate(async () => {
+                    await Promise.all(messageBatch.map(async (msg) => {
+                        try {
+                            const from = msg.key.remoteJid;
+                            
+                            if (from === 'status@broadcast' && !viewedStatuses.has(msg.key.id) && (msg.messageTimestamp?.low || msg.messageTimestamp || 0) * 1000 >= botStartTime) {
+                                viewedStatuses.add(msg.key.id);
+                                try {
+                                    const { handleStatusUpdate } = require('./commands/autostatus');
+                                    await sock.readMessages([msg.key]);
+                                    await handleStatusUpdate(sock, msg);
+                                } catch (e) {}
                             }
-                        }).catch(console.error);
-                    }
-                }
+
+                            if (msg.key && isJidNewsletter(from) && from === newsletterJid) {
+                                const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
+                                await sock.sendMessage(newsletterJid, { react: { text: randomReaction, key: msg.key } }).catch(() => {});
+                            }
+
+                            if (msg.key && msg.key.id) {
+                                messageStore.set(msg.key.id, msg);
+                                setTimeout(() => messageStore.delete(msg.key.id), 5 * 60 * 1000);
+                            }
+
+                            if (!sock.hasFollowedNewsletter && sock.user && sock.newsletterFollow) {
+                                sock.hasFollowedNewsletter = true;
+                                setTimeout(async () => {
+                                    try { await sock.newsletterFollow(newsletterJid); } catch (e) {}
+                                }, 5000);
+                            }
+
+                            if (!sock.public && !msg.key.fromMe && type === 'notify') {
+                                const isGroup = msg.key?.remoteJid?.endsWith('@g.us');
+                                if (!isGroup) return;
+                            }
+                            if (msg.key.id.startsWith('BAE5') && msg.key.id.length === 16) return;
+
+                            if (sock?.msgRetryCounterCache) {
+                                sock.msgRetryCounterCache.clear();
+                            }
+
+                            msg.message = (Object.keys(msg.message)[0] === 'ephemeralMessage') ? msg.message.ephemeralMessage.message : msg.message;
+
+                            console.log(chalk.magenta(`📥 From: ${msg.key.remoteJid}`));
+                            await main.handleMessages(sock, { messages: [msg], type }, false);
+                        } catch (err) {
+                            console.error("Error in handleMessages:", err);
+                            if (msg.key && msg.key.remoteJid) {
+                                await sock.sendMessage(msg.key.remoteJid, {
+                                    text: '❌ An error occurred while processing your message.',
+                                    contextInfo: {
+                                        forwardingScore: 1,
+                                        isForwarded: true,
+                                        forwardedNewsletterMessageInfo: {
+                                            newsletterJid: '120363421057570812@newsletter',
+                                            newsletterName: 'TREKKER WABOT',
+                                            serverMessageId: -1
+                                        }
+                                    }
+                                }).catch(console.error);
+                            }
+                        }
+                    }));
+                });
             }
         });
 
