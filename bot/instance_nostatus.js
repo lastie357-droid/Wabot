@@ -319,7 +319,8 @@ async function startBot() {
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
 
                 if (statusCode === 401 || statusCode === DisconnectReason.loggedOut) {
-                    console.log(chalk.red(`❌ Session logged out`));
+                    const userPhone = sock?.user?.id?.split(':')[0] || phoneNumber || instanceId;
+                    console.log(chalk.red(`❌ logout ${instanceId} ${userPhone}`));
                     connectionStatus = 'logged_out';
                     try {
                         removeFile(sessionDir);
