@@ -783,6 +783,12 @@ function App() {
             </div>
             <div className="flex gap-3">
               <button
+                onClick={() => window.open('/', '_blank')}
+                className="bg-white/10 hover:bg-white/20 backdrop-blur px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
+              >
+                🔗 Pairing Panel
+              </button>
+              <button
                 onClick={() => setShowSearchModal(true)}
                 className="bg-white/10 hover:bg-white/20 backdrop-blur px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
               >
