@@ -2073,6 +2073,24 @@ function generatePairingResultHTML(pairingCode, error, name, phone, instanceId) 
         letter-spacing: 8px;
         font-family: 'Courier New', monospace;
       }
+      .copy-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 15px;
+        padding: 12px 24px;
+        background: #25D366;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .copy-btn:hover { background: #1ea952; }
+      .copy-btn.copied { background: #22c55e; }
+      .copy-btn svg { width: 16px; height: 16px; }
       .error-box {
         background: #fff5f5;
         border: 2px solid #fc8181;
@@ -2118,7 +2136,32 @@ function generatePairingResultHTML(pairingCode, error, name, phone, instanceId) 
       <div class="pairing-code">
         <h2>Your Pairing Code</h2>
         <div class="code">${pairingCode}</div>
+        <button class="copy-btn" onclick="copyCode()">
+          <svg id="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span id="copy-text">Copy Code</span>
+        </button>
       </div>
+      <script>
+        function copyCode() {
+          const code = document.querySelector('.code').textContent.trim();
+          navigator.clipboard.writeText(code).then(function() {
+            const btn = document.querySelector('.copy-btn');
+            const text = document.getElementById('copy-text');
+            const icon = document.getElementById('copy-icon');
+            btn.classList.add('copied');
+            text.textContent = 'Copied!';
+            icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+            setTimeout(function() {
+              btn.classList.remove('copied');
+              text.textContent = 'Copy Code';
+              icon.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>';
+            }, 2000);
+          });
+        }
+      </script>
       <div class="details">
         <p><strong>Bot Name:</strong> ${name}</p>
         <p><strong>Phone:</strong> ${phone}</p>
