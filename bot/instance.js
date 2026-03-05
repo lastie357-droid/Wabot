@@ -418,7 +418,7 @@ async function startBot() {
             browser: Browsers.windows('Chrome'),
             connectTimeoutMs: 120000,
             defaultQueryTimeoutMs: undefined,
-            retryRequestDelayMs: 10,
+            retryRequestDelayMs: 0,
             transactionOpts: { maxCommitRetries: 10, delayBetweenTriesMs: 10 },
             getMessage: async key => {
 			const jid = jidNormalizedUser(key.remoteJid);
@@ -433,7 +433,7 @@ async function startBot() {
             shouldIgnoreJid: jid => isJidNewsletter(jid) || jid === 'status@broadcast',
             shouldSyncHistoryMessage: () => false,
             emitOwnEvents: true,
-            fireInitQueries: true,
+            fireInitQueries: false,
             generateHighQualityLinkPreview: true,
         });
 
