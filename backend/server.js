@@ -623,7 +623,7 @@ async function initDatabase() {
     }
     
     // Fix any invalid ports in DB
-    await executeQuery('UPDATE bot_instances SET port = 4000 + (ABS(RANDOM()) % 1000) WHERE port >= 65536 OR port < 1024');
+    await executeQuery('UPDATE bot_instances SET port = 4000 + (FLOOR(RANDOM() * 1000))::INTEGER WHERE port >= 65536 OR port < 1024');
 
     console.log(`✓ Database initialized successfully for ${SERVERNAME} (${useSQLite ? 'SQLite' : 'PostgreSQL'})`);
     console.log(`✓ Port counter initialized at ${portCounter}`);
