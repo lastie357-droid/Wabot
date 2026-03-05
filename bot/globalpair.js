@@ -242,6 +242,10 @@ Your bot is now connected and registered in the system.
                         removeFile(dirs);
                         console.log(`\ud83d\uddd1\ufe0f Pairing session cleaned up for ${instanceId}`);
 
+                        // Wait for 3 minutes before notifying backend to start the bot
+                        console.log("⏳ Waiting 3 minutes before starting the bot instance...");
+                        await delay(180000); // 3 minutes delay
+
                         // Notify backend to start the bot
                         try {
                             await axios.post('http://localhost:5000/api/instances/start-after-pairing', {
