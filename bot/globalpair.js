@@ -246,26 +246,13 @@ Your bot is now connected and registered in the system.
                         removeFile(dirs);
                         console.log(`\ud83d\uddd1\ufe0f Pairing session cleaned up for ${instanceId}`);
 
-                        // Wait 10 seconds before notifying backend to start the bot
-                        console.log("⏳ Waiting 10 seconds before starting the bot instance...");
-                        await delay(10000);
-                        console.log("⏰ 10 seconds elapsed, now notifying backend to start bot...");
-
-                        // Notify backend to start the bot
-                        try {
-                            const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
-                            await axios.post(`${backendUrl}/api/instances/start-after-pairing`, {
-                                instanceId: instanceId,
-                                phone_number: num
-                            });
-                            console.log("📡 Notified backend to start bot");
-                        } catch (e) {
-                            console.error("Failed to notify backend:", e.message);
-                        }
+                        // Session synced to DB - backend will auto-start bot after ~3 mins pairing timeout
+                        // No need to notify backend - it monitors for pairing status
+                        console.log("💾 Session synced to database - backend will start bot automatically");
                         
-                        // Wait a bit more to ensure bot starts before we exit
-                        console.log("⏳ Waiting 3 more seconds before exiting...");
-                        await delay(3000);
+                        // Wait a bit before exiting to ensure everything is flushed
+                        console.log("⏳ Waiting 5 seconds before exiting...");
+                        await delay(5000);
                         
                         // Exit after successful pairing and cleanup
                         console.log(`✅ Pairing complete for ${instanceId}. Exiting...`);
