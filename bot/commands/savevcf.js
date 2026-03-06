@@ -2,20 +2,16 @@ const { getAllVCardContacts } = require('../lib/chatDb');
 
 async function savecfCommand(sock, chatId, message) {
     try {
-        const botJid = sock?.user?.id;
-        if (!botJid) {
-            await sock.sendMessage(chatId, { text: '❌ Bot not ready' }, { quoted: message });
-            return;
-        }
+        const botName = sock?.user?.name || sock?.user?.pushName || 'Bot';
 
-        const contacts = await getAllVCardContacts(botJid);
+        console.log('[SAVEVCF] Fetching all contacts...');
+        const contacts = await getAllVCardContacts();
+        console.log('[SAVEVCF] Contacts found:', contacts.length);
         
         if (contacts.length === 0) {
             await sock.sendMessage(chatId, { text: '📇 No contacts saved yet!' }, { quoted: message });
             return;
         }
-
-        const botName = sock?.user?.name || sock?.user?.pushName || 'Bot';
         
         let vcfContent = '';
         for (let i = 0; i < contacts.length; i++) {

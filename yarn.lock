@@ -4959,6 +4959,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"node-crate@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "node-crate@npm:3.0.0"
+  dependencies:
+    type-of-is: "npm:>= 3.3.x"
+  checksum: 10c0/12a52baddddde0626b9540ff607d0ebc4433ebd9bc5e11f0ff24f0eaf57ba094aacbf065bc3a00e5186741ed71df5199ea4ca9cb2cafe601f7886b66b78f8968
+  languageName: node
+  linkType: hard
+
 "node-domexception@npm:^1.0.0":
   version: 1.0.0
   resolution: "node-domexception@npm:1.0.0"
@@ -7276,6 +7285,7 @@ __metadata:
     moment-timezone: "npm:^0.6.0"
     mumaker: "npm:^2.0.0"
     node-cache: "npm:^5.1.2"
+    node-crate: "npm:^3.0.0"
     node-fetch: "npm:^3.3.2"
     node-id3: "npm:^0.2.3"
     node-webpmux: "npm:^3.1.0"
@@ -7357,6 +7367,13 @@ __metadata:
     media-typer: "npm:^1.1.0"
     mime-types: "npm:^3.0.0"
   checksum: 10c0/7f7ec0a060b16880bdad36824ab37c26019454b67d73e8a465ed5a3587440fbe158bc765f0da68344498235c877e7dbbb1600beccc94628ed05599d667951b99
+  languageName: node
+  linkType: hard
+
+"type-of-is@npm:>= 3.3.x":
+  version: 3.5.1
+  resolution: "type-of-is@npm:3.5.1"
+  checksum: 10c0/6b558b9c3ae9ec310e9242b39b3a28430fd99637949f119669f156e3c08f32b3a58fca4f3e711133e268e35e2e0f297c174b9176daa76d5a7f45e6dc7fc120a2
   languageName: node
   linkType: hard
 

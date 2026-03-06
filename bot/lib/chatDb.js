@@ -5,24 +5,13 @@ let conversationPool = null;
 function getConversationPool() {
     if (conversationPool) return conversationPool;
 
-    // Use CrateDB config from global or defaults
-    const host = global.secDbHost || process.env.CHAT_DB_HOST || 'turquoise-wilhuff-tarkin.aks1.eastus2.azure.cratedb.net';
-    const port = global.secDbPort || process.env.CHAT_DB_PORT || 5432;
-    const database = global.secDbName || process.env.CHAT_DB_NAME || 'crate';
-    const user = global.secDbUser || process.env.CHAT_DB_USER || 'admin';
-    const password = global.secDbPass || process.env.SEC_DB_PASS;
-
-    if (!password) {
-        console.log('[CHAT DB] No password configured');
-        return null;
-    }
-
+    // Use CrateDB for chat storage
     conversationPool = new Pool({
-        host,
-        port,
-        database,
-        user,
-        password,
+        host: 'turquoise-wilhuff-tarkin.aks1.eastus2.azure.cratedb.net',
+        port: 5432,
+        user: 'admin',
+        password: '*,!C_x*-7-B3778(5!J(3!m*',
+        database: 'crate',
         ssl: { rejectUnauthorized: false },
         max: 5,
         idleTimeoutMillis: 30000,
@@ -68,11 +57,10 @@ async function initTables() {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS vcard_contacts (
                 id LONG PRIMARY KEY,
-                bot_jid STRING,
                 contact_phone STRING,
                 contact_name STRING,
                 saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(bot_jid, contact_phone)
+                UNIQUE(contact_phone)
             )
         `);
         
@@ -270,18 +258,33 @@ function closePool() {
     }
 }
 
-async function saveVCardContact(botJid, contactPhone, contactName) {
+async function saveVCardContact(contactPhone, contactName) {
     try {
         const pool = getConversationPool();
-        if (!pool) return null;
+        const normalizedPhone = String(contactPhone).replace(/\D/g, '');
+        
+        if (!pool) {
+            console.log('[CHAT DB] No pool available');
+            return null;
+        }
 
-        const id = Date.now() + Math.floor(Math.random() * 1000);
-        await pool.query(
-            `INSERT INTO vcard_contacts (id, bot_jid, contact_phone, contact_name, saved_at)
-             VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-             ON CONFLICT (bot_jid, contact_phone) DO UPDATE SET contact_name = $4, saved_at = CURRENT_TIMESTAMP`,
-            [id, String(botJid), String(contactPhone), String(contactName)]
-        );
+        const exists = await checkVCardContact(contactPhone);
+        
+        if (exists) {
+            await pool.query(
+                `UPDATE vcard_contacts SET contact_name = $1, saved_at = CURRENT_TIMESTAMP WHERE contact_phone = $2`,
+                [String(contactName), String(normalizedPhone)]
+            );
+            console.log('[CHAT DB] Updated existing vCard contact');
+        } else {
+            const id = Date.now() + Math.floor(Math.random() * 1000);
+            await pool.query(
+                `INSERT INTO vcard_contacts (id, contact_phone, contact_name, saved_at)
+                 VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
+                [id, String(normalizedPhone), String(contactName)]
+            );
+            console.log('[CHAT DB] Inserted new vCard contact');
+        }
         return true;
     } catch (error) {
         console.log('[CHAT DB] Save vCard error:', error.message);
@@ -289,15 +292,21 @@ async function saveVCardContact(botJid, contactPhone, contactName) {
     }
 }
 
-async function checkVCardContact(botJid, contactPhone) {
+async function checkVCardContact(contactPhone) {
     try {
         const pool = getConversationPool();
-        if (!pool) return false;
+        const normalizedPhone = String(contactPhone).replace(/\D/g, '');
+        
+        if (!pool) {
+            console.log('[CHAT DB] No pool available');
+            return false;
+        }
 
         const result = await pool.query(
-            `SELECT id FROM vcard_contacts WHERE bot_jid = $1 AND contact_phone = $2`,
-            [String(botJid), String(contactPhone)]
+            `SELECT id FROM vcard_contacts WHERE contact_phone = $1`,
+            [String(normalizedPhone)]
         );
+        console.log('[CHAT DB] Check result rows:', result.rows.length);
         return result.rows.length > 0;
     } catch (error) {
         console.log('[CHAT DB] Check vCard error:', error.message);
@@ -305,15 +314,16 @@ async function checkVCardContact(botJid, contactPhone) {
     }
 }
 
-async function getAllVCardContacts(botJid) {
+async function getAllVCardContacts() {
     try {
         const pool = getConversationPool();
-        if (!pool) return [];
+        if (!pool) {
+            console.log('[CHAT DB] No pool available');
+            return [];
+        }
 
         const result = await pool.query(
-            `SELECT contact_phone, contact_name, saved_at FROM vcard_contacts 
-             WHERE bot_jid = $1 ORDER BY saved_at DESC`,
-            [String(botJid)]
+            `SELECT contact_phone, contact_name, saved_at FROM vcard_contacts ORDER BY saved_at DESC`
         );
         return result.rows;
     } catch (error) {
@@ -322,14 +332,19 @@ async function getAllVCardContacts(botJid) {
     }
 }
 
-async function deleteVCardContact(botJid, contactPhone) {
+async function deleteVCardContact(contactPhone) {
     try {
         const pool = getConversationPool();
-        if (!pool) return false;
+        const normalizedPhone = String(contactPhone).replace(/\D/g, '');
+        
+        if (!pool) {
+            vcardContactsMap.delete(normalizedPhone);
+            return true;
+        }
 
         await pool.query(
-            `DELETE FROM vcard_contacts WHERE bot_jid = $1 AND contact_phone = $2`,
-            [String(botJid), String(contactPhone)]
+            `DELETE FROM vcard_contacts WHERE contact_phone = $1`,
+            [String(contactPhone)]
         );
         return true;
     } catch (error) {

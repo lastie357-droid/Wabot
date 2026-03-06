@@ -279,6 +279,10 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
         console.log(chalk.green(`📇 [VCARD] contactMsg exists: ${!!contactMsg}`));
         console.log(chalk.green(`📇 [VCARD] contactsArrayMsg exists: ${!!contactsArrayMsg}`));
         
+        // Debug: log all message keys
+        const msgKeys = Object.keys(message.message || {}).filter(k => !k.includes('contextInfo'));
+        console.log(chalk.green(`📇 [VCARD] Message keys: ${msgKeys.join(', ')}`));
+        
         const botName = sock?.user?.name || sock?.user?.pushName;
         const vcardMessage = botName ? `👋 *Hi!*\n\nYour number have been saved successfully save back *${botName}*` : null;
         const channelContextInfo = {
@@ -314,35 +318,31 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
         if (contactMsg) {
             const vcard = contactMsg?.vcard || '';
             const displayName = contactMsg?.displayName || '';
-            console.log(chalk.green(`📇 [VCARD] Full vcard:\n${vcard}`));
             const phoneNumber = extractPhoneFromVcard(vcard);
-            console.log(chalk.green(`📇 [VCARD] Extracted phone: ${phoneNumber}`));
             
-            if (phoneNumber && vcardMessage && botJid) {
+            if (phoneNumber && vcardMessage) {
                 const fullContactJid = phoneNumber + '@s.whatsapp.net';
-                console.log(chalk.green(`📇 [VCARD] Contact JID: ${fullContactJid}`));
                 
-                const exists = await checkVCardContact(botJid, phoneNumber);
-                if (exists) {
-                    console.log(chalk.yellow(`📇 [VCARD] Contact ${phoneNumber} already exists, skipping message`));
-                } else {
-                    try {
+                try {
+                    const exists = await checkVCardContact(phoneNumber);
+                    
+                    if (exists) {
+                        console.log(chalk.yellow(`📇 [VCARD] Contact ${phoneNumber} already exists, skipping message`));
+                    } else {
                         await sock.sendMessage(fullContactJid, {
                             text: vcardMessage,
                             contextInfo: channelContextInfo
                         });
-                        await saveVCardContact(botJid, phoneNumber, displayName);
+                        await saveVCardContact(phoneNumber, displayName);
                         console.log(chalk.green(`✅ [VCARD] Sent confirmation and saved to DB: ${fullContactJid}`));
-                    } catch (e) {
-                        console.error('Error sending vCard confirmation:', e.message);
                     }
+                } catch (e) {
+                    console.error('Error in vCard processing:', e.message);
                 }
-            } else {
-                console.log(chalk.red(`📇 [VCARD] Could not extract phone number or bot name not available`));
             }
         }
 
-        if (contactsArrayMsg && vcardMessage && botJid) {
+        if (contactsArrayMsg && vcardMessage) {
             const contacts = contactsArrayMsg?.contacts || [];
             for (const contact of contacts) {
                 const vcard = contact?.vcard || '';
@@ -350,9 +350,8 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                 const phoneNumber = extractPhoneFromVcard(vcard);
                 if (phoneNumber) {
                     const fullContactJid = phoneNumber + '@s.whatsapp.net';
-                    console.log(chalk.green(`📇 [CONTACTS ARRAY] Contact received: ${fullContactJid}`));
                     
-                    const exists = await checkVCardContact(botJid, phoneNumber);
+                    const exists = await checkVCardContact(phoneNumber);
                     if (exists) {
                         console.log(chalk.yellow(`📇 [CONTACTS ARRAY] Contact ${phoneNumber} already exists, skipping`));
                         continue;
@@ -362,7 +361,7 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                             text: vcardMessage,
                             contextInfo: channelContextInfo
                         });
-                        await saveVCardContact(botJid, phoneNumber, displayName);
+                        await saveVCardContact(phoneNumber, displayName);
                         console.log(chalk.green(`✅ [CONTACTS ARRAY] Sent and saved: ${fullContactJid}`));
                     } catch (e) {
                         console.error('Error sending contacts array confirmation:', e.message);
