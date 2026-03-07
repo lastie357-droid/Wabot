@@ -283,7 +283,35 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
         const msgKeys = Object.keys(message.message || {}).filter(k => !k.includes('contextInfo'));
         console.log(chalk.green(`📇 [VCARD] Message keys: ${msgKeys.join(', ')}`));
         
-        const botName = sock?.user?.name || sock?.user?.pushName;
+        const isGroup = chatId.endsWith('@g.us');
+        const senderPushName = message.pushName || 'User';
+        const botName = sock?.user?.name || sock?.user?.pushName || 'Bot';
+
+        if (isGroup && !message.key.fromMe) {
+            const senderJid = message.key.participant || message.key.remoteJid;
+            const senderPhone = senderJid.replace(/\D/g, '');
+            
+            try {
+                const exists = await checkVCardContact(senderPhone);
+                if (!exists) {
+                    const groupMetadata = await sock.groupMetadata(chatId).catch(() => ({ subject: 'our shared group' }));
+                    const groupName = groupMetadata.subject || 'our shared group';
+                    
+                    const privateMsg = `👋 *Hi ${senderPushName}!*\n\nYour number have been saved successfully. I am *${botName}*. We share the same group: *${groupName}*.`;
+                    
+                    await sock.sendMessage(senderPhone + '@s.whatsapp.net', {
+                        text: privateMsg,
+                        contextInfo: channelContextInfo
+                    });
+                    
+                    await saveVCardContact(senderPhone, senderPushName);
+                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Sent private message and saved to DB: ${senderPhone}`));
+                }
+            } catch (e) {
+                console.error('Error in group auto-save:', e.message);
+            }
+        }
+
         const vcardMessage = botName ? `👋 *Hi!*\n\nYour number have been saved successfully save back *${botName}*` : null;
         const channelContextInfo = {
             forwardingScore: 1,
