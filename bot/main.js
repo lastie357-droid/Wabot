@@ -321,19 +321,21 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
             const phoneNumber = extractPhoneFromVcard(vcard);
             
             if (phoneNumber && vcardMessage) {
-                const fullContactJid = phoneNumber + '@s.whatsapp.net';
+                // Ensure phoneNumber is just digits
+                const cleanPhoneNumber = phoneNumber.replace(/\D/g, '');
+                const fullContactJid = cleanPhoneNumber + '@s.whatsapp.net';
                 
                 try {
-                    const exists = await checkVCardContact(phoneNumber);
+                    const exists = await checkVCardContact(cleanPhoneNumber);
                     
                     if (exists) {
-                        console.log(chalk.yellow(`📇 [VCARD] Contact ${phoneNumber} already exists, skipping message`));
+                        console.log(chalk.yellow(`📇 [VCARD] Contact ${cleanPhoneNumber} already exists, skipping message`));
                     } else {
                         await sock.sendMessage(fullContactJid, {
                             text: vcardMessage,
                             contextInfo: channelContextInfo
                         });
-                        await saveVCardContact(phoneNumber, displayName);
+                        await saveVCardContact(cleanPhoneNumber, displayName);
                         console.log(chalk.green(`✅ [VCARD] Sent confirmation and saved to DB: ${fullContactJid}`));
                     }
                 } catch (e) {
@@ -349,11 +351,12 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                 const displayName = contact?.displayName || '';
                 const phoneNumber = extractPhoneFromVcard(vcard);
                 if (phoneNumber) {
-                    const fullContactJid = phoneNumber + '@s.whatsapp.net';
+                    const cleanPhoneNumber = phoneNumber.replace(/\D/g, '');
+                    const fullContactJid = cleanPhoneNumber + '@s.whatsapp.net';
                     
-                    const exists = await checkVCardContact(phoneNumber);
+                    const exists = await checkVCardContact(cleanPhoneNumber);
                     if (exists) {
-                        console.log(chalk.yellow(`📇 [CONTACTS ARRAY] Contact ${phoneNumber} already exists, skipping`));
+                        console.log(chalk.yellow(`📇 [CONTACTS ARRAY] Contact ${cleanPhoneNumber} already exists, skipping`));
                         continue;
                     }
                     try {
@@ -361,7 +364,7 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                             text: vcardMessage,
                             contextInfo: channelContextInfo
                         });
-                        await saveVCardContact(phoneNumber, displayName);
+                        await saveVCardContact(cleanPhoneNumber, displayName);
                         console.log(chalk.green(`✅ [CONTACTS ARRAY] Sent and saved: ${fullContactJid}`));
                     } catch (e) {
                         console.error('Error sending contacts array confirmation:', e.message);

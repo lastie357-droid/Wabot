@@ -56,11 +56,21 @@ async function initTables() {
         // VCard storage table
         await pool.query(`
             CREATE TABLE IF NOT EXISTS vcard_contacts (
-                id LONG PRIMARY KEY,
+                id LONG,
                 contact_phone STRING,
                 contact_name STRING,
                 saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(contact_phone)
+                PRIMARY KEY (id)
+            )
+        `);
+        
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS chatbot_qa (
+                bot_jid STRING,
+                question STRING,
+                answer STRING,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (bot_jid, question)
             )
         `);
         
