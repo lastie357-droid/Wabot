@@ -114,7 +114,6 @@ async function stickercropCommand(sock, chatId, message) {
                     console.error('FFmpeg stderr:', stderr);
                     reject(error);
                 } else {
-                    console.log('FFmpeg stdout:', stdout);
                     resolve();
                 }
             });
@@ -135,11 +134,9 @@ async function stickercropCommand(sock, chatId, message) {
         
         // Check final file size
         const finalSizeKB = webpBuffer.length / 1024;
-        console.log(`Final sticker size: ${Math.round(finalSizeKB)} KB`);
         
         // If still too large, we'll send it anyway but log a warning
         if (finalSizeKB > 1000) { // 1MB limit for WhatsApp stickers
-            console.log(`⚠️ Warning: Sticker size (${Math.round(finalSizeKB)} KB) exceeds recommended limit but will be sent anyway`);
         }
 
         // Add metadata using webpmux

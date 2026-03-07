@@ -97,7 +97,6 @@ async function handleChatbotCommand(sock, chatId, message, match) {
             }
             data.chatbot[chatId] = true;
             saveUserGroupData(data);
-            console.log(`✅ Chatbot enabled for group ${chatId}`);
             return sock.sendMessage(chatId, { 
                 text: '*Chatbot has been enabled for this group*',
                 quoted: message
@@ -114,7 +113,6 @@ async function handleChatbotCommand(sock, chatId, message, match) {
             }
             delete data.chatbot[chatId];
             saveUserGroupData(data);
-            console.log(`✅ Chatbot disabled for group ${chatId}`);
             return sock.sendMessage(chatId, { 
                 text: '*Chatbot has been disabled for this group*',
                 quoted: message
@@ -129,7 +127,6 @@ async function handleChatbotCommand(sock, chatId, message, match) {
             const groupMetadata = await sock.groupMetadata(chatId);
             isAdmin = groupMetadata.participants.some(p => p.id === senderId && (p.admin === 'admin' || p.admin === 'superadmin'));
         } catch (e) {
-            console.warn('⚠️ Could not fetch group metadata. Bot might not be admin.');
         }
     }
 
@@ -151,7 +148,6 @@ async function handleChatbotCommand(sock, chatId, message, match) {
         }
         data.chatbot[chatId] = true;
         saveUserGroupData(data);
-        console.log(`✅ Chatbot enabled for group ${chatId}`);
         return sock.sendMessage(chatId, { 
             text: '*Chatbot has been enabled for this group*',
             quoted: message
@@ -168,7 +164,6 @@ async function handleChatbotCommand(sock, chatId, message, match) {
         }
         delete data.chatbot[chatId];
         saveUserGroupData(data);
-        console.log(`✅ Chatbot disabled for group ${chatId}`);
         return sock.sendMessage(chatId, { 
             text: '*Chatbot has been disabled for this group*',
             quoted: message
@@ -277,7 +272,6 @@ async function handleChatbotResponse(sock, chatId, message, userMessage, senderI
         // Get history from DB (last 20 messages)
         const dbHistory = await getConversationHistory(chatId, senderId, botJid, 20);
         const historyCount = dbHistory.length;
-        console.log(`[CHATBOT] Retrieved history count: ${historyCount}`);
 
         // Get AI response with context
         const response = await getAIResponse(cleanedMessage, {

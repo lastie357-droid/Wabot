@@ -42,7 +42,6 @@ async function ensureDefaultSticker(state) {
 			}
 		}
 	} catch (e) {
-		console.warn('ensureDefaultSticker failed:', e?.message || e);
 	}
 }
 
@@ -242,7 +241,6 @@ async function setMentionCommand(sock, chatId, message, isOwner) {
             }
         }
     } catch (e) {
-        console.warn('cleanup previous assets failed:', e?.message || e);
     }
 
     // Save into assets (only one file will exist afterwards)

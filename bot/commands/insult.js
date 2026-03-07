@@ -33,7 +33,6 @@ const insults = [
 async function insultCommand(sock, chatId, message) {
     try {
         if (!message || !chatId) {
-            console.log('Invalid message or chatId:', { message, chatId });
             return;
         }
 
