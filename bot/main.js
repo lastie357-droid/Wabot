@@ -299,6 +299,10 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
         };
 
         if (isGroup && !message.key.fromMe) {
+            console.log(chalk.cyan(`[GROUP-MESSAGE] Full message metadata: ${JSON.stringify(message, null, 2)}`));
+            
+            // TEMPORARILY DISABLED - senderJid needs mapping (has lid issue)
+            /*
             const senderJid = message.key.participant || message.key.remoteJid;
             
             try {
@@ -323,6 +327,7 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
             } catch (e) {
                 console.error(chalk.red('Error in group auto-save:'), e.message);
             }
+            */
         }
         
         function extractPhoneFromVcard(vcard) {
