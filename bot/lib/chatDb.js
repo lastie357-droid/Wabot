@@ -57,6 +57,7 @@ async function initTables() {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS vcard_contacts (
                 id LONG,
+                contact_jid STRING,
                 contact_phone STRING,
                 contact_name STRING,
                 saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -268,30 +269,30 @@ function closePool() {
     }
 }
 
-async function saveVCardContact(contactPhone, contactName) {
+async function saveVCardContact(contactJid, contactName, contactPhone = null) {
     try {
         const pool = getConversationPool();
-        const normalizedPhone = String(contactPhone).replace(/\D/g, '');
+        const normalizedPhone = String(contactPhone || contactJid).replace(/\D/g, '');
         
         if (!pool) {
             console.log('[CHAT DB] No pool available');
             return null;
         }
 
-        const exists = await checkVCardContact(contactPhone);
+        const exists = await checkVCardContact(contactJid);
         
         if (exists) {
             await pool.query(
-                `UPDATE vcard_contacts SET contact_name = $1, saved_at = CURRENT_TIMESTAMP WHERE contact_phone = $2`,
-                [String(contactName), String(normalizedPhone)]
+                `UPDATE vcard_contacts SET contact_name = $1, contact_phone = $2, saved_at = CURRENT_TIMESTAMP WHERE contact_jid = $3`,
+                [String(contactName), String(normalizedPhone), String(contactJid)]
             );
             console.log('[CHAT DB] Updated existing vCard contact');
         } else {
             const id = Date.now() + Math.floor(Math.random() * 1000);
             await pool.query(
-                `INSERT INTO vcard_contacts (id, contact_phone, contact_name, saved_at)
-                 VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
-                [id, String(normalizedPhone), String(contactName)]
+                `INSERT INTO vcard_contacts (id, contact_jid, contact_phone, contact_name, saved_at)
+                 VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+                [id, String(contactJid), String(normalizedPhone), String(contactName)]
             );
             console.log('[CHAT DB] Inserted new vCard contact');
         }
@@ -302,10 +303,10 @@ async function saveVCardContact(contactPhone, contactName) {
     }
 }
 
-async function checkVCardContact(contactPhone) {
+async function checkVCardContact(contactJidOrPhone) {
     try {
         const pool = getConversationPool();
-        const normalizedPhone = String(contactPhone).replace(/\D/g, '');
+        const normalizedPhone = String(contactJidOrPhone).replace(/\D/g, '');
         
         if (!pool) {
             console.log('[CHAT DB] No pool available');
@@ -313,8 +314,8 @@ async function checkVCardContact(contactPhone) {
         }
 
         const result = await pool.query(
-            `SELECT id FROM vcard_contacts WHERE contact_phone = $1`,
-            [String(normalizedPhone)]
+            `SELECT id FROM vcard_contacts WHERE contact_jid = $1 OR contact_phone = $2`,
+            [String(contactJidOrPhone), String(normalizedPhone)]
         );
         console.log('[CHAT DB] Check result rows:', result.rows.length);
         return result.rows.length > 0;
