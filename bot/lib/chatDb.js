@@ -363,6 +363,21 @@ async function deleteVCardContact(contactPhone) {
     }
 }
 
+async function clearAllVCardContacts() {
+    try {
+        const pool = getConversationPool();
+        if (!pool) {
+            vcardContactsMap.clear();
+            return true;
+        }
+        await pool.query(`DELETE FROM vcard_contacts`);
+        return true;
+    } catch (error) {
+        console.log('[CHAT DB] Clear all vCards error:', error.message);
+        return false;
+    }
+}
+
 module.exports = {
     getConversationPool,
     getContext,
@@ -382,5 +397,6 @@ module.exports = {
     saveVCardContact,
     checkVCardContact,
     getAllVCardContacts,
-    deleteVCardContact
+    deleteVCardContact,
+    clearAllVCardContacts
 };

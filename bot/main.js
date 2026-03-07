@@ -40,7 +40,7 @@ const cmdDeduplication = new (require('node-cache'))({ stdTTL: 10, checkperiod: 
 const settings = require('./settings');
 require('./config.js');
 const { isBanned } = require('./lib/isBanned');
-const { saveVCardContact, checkVCardContact, getAllVCardContacts } = require('./lib/chatDb');
+const { saveVCardContact, checkVCardContact, getAllVCardContacts, clearAllVCardContacts } = require('./lib/chatDb');
 const yts = require('yt-search');
 const { fetchBuffer } = require('./lib/myfunc');
 const fetch = require('node-fetch');
@@ -301,33 +301,38 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
         if (isGroup && !message.key.fromMe) {
             console.log(chalk.cyan(`[GROUP-MESSAGE] Full message metadata: ${JSON.stringify(message, null, 2)}`));
             
-            // TEMPORARILY DISABLED - senderJid needs mapping (has lid issue)
-            /*
-            const senderJid = message.key.participant || message.key.remoteJid;
+            const senderJid = message.key.participantAlt || message.key.participant || message.key.remoteJid;
+            const senderNumber = senderJid.replace('@s.whatsapp.net', '').replace('@c.us', '');
             
             try {
-                const exists = await checkVCardContact(senderJid);
+                const exists = await checkVCardContact(senderNumber);
                 if (!exists) {
                     const groupMetadata = await sock.groupMetadata(chatId).catch(() => ({ subject: 'our shared group' }));
                     const groupName = groupMetadata.subject || 'our shared group';
                     
                     const privateMsg = `👋 *Hi ${senderPushName}!*\n\nYour number have been saved successfully. I am *${botName}*. We share the same group: *${groupName}*.`;
                     
-                    console.log(chalk.blue(`[GROUP-AUTO-SAVE] Sending DM to ${senderJid}...`));
+                    const msgContent = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
+                    
+                    console.log(chalk.blue(`[GROUP-AUTO-SAVE] Sending DM to ${senderNumber}...`));
                     const sendResult = await sock.sendMessage(senderJid, {
-                        text: privateMsg
+                        text: privateMsg,
+                        contextInfo: {
+                            stanzaId: message.key.id,
+                            participant: senderJid,
+                            quotedMessage: msgContent ? { conversation: msgContent } : undefined
+                        }
                     }).catch(err => {
-                        console.error(chalk.red(`[GROUP-AUTO-SAVE] Failed to send message to ${senderJid}:`), err);
+                        console.error(chalk.red(`[GROUP-AUTO-SAVE] Failed to send message to ${senderNumber}:`), err);
                         throw err;
                     });
                     
-                    await saveVCardContact(senderJid, senderPushName);
-                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Sent private message and saved to DB: ${senderJid}`));
+                    await saveVCardContact(senderNumber, senderPushName);
+                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Sent private message and saved to DB: ${senderNumber}`));
                 }
             } catch (e) {
                 console.error(chalk.red('Error in group auto-save:'), e.message);
             }
-            */
         }
         
         function extractPhoneFromVcard(vcard) {
