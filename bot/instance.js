@@ -28,8 +28,11 @@ const store = {
     ev.on('messages.upsert', ({ messages }) => {
       for (const msg of messages) {
         if (!msg.key?.id) continue;
+        if (msg.messageStubType) continue;
 
         const jid = msg.key.remoteJid;
+        if (isSystemJid(jid)) continue;
+
         if (!store.messages.has(jid)) {
           store.messages.set(jid, new Map());
         }
@@ -208,10 +211,9 @@ function removeFile(filePath) {
 
 function isSystemJid(jid) {
     if (!jid) return true;
+    if (jid === 'status@broadcast') return false;
     const systemPatterns = [
-        'status@broadcast',
         'newsletter',
-        'broadcast',
         '@newsletter',
         '@broadcast'
     ];
@@ -544,6 +546,7 @@ async function startBot() {
             const messageBatch = [];
             for (const mek of messages) {
                 if (!mek.message || !mek.key?.id) continue;
+                if (mek.messageStubType) continue;
                 if (isSystemJid(mek.key.remoteJid)) continue;
                 if (processedMessages.has(mek.key.id)) continue;
 
