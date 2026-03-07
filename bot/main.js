@@ -286,6 +286,17 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
         const isGroup = chatId.endsWith('@g.us');
         const senderPushName = message.pushName || 'User';
         const botName = sock?.user?.name || sock?.user?.pushName || 'Bot';
+        
+        const vcardMessage = botName ? `👋 *Hi!*\n\nYour number have been saved successfully save back *${botName}*` : null;
+        const channelContextInfo = {
+            forwardingScore: 1,
+            isForwarded: true,
+            forwardedNewsletterMessageInfo: {
+                newsletterJid: '120363421057570812@newsletter',
+                newsletterName: botName,
+                serverMessageId: -1
+            }
+        };
 
         if (isGroup && !message.key.fromMe) {
             const senderJid = message.key.participant || message.key.remoteJid;
@@ -311,17 +322,6 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                 console.error('Error in group auto-save:', e.message);
             }
         }
-
-        const vcardMessage = botName ? `👋 *Hi!*\n\nYour number have been saved successfully save back *${botName}*` : null;
-        const channelContextInfo = {
-            forwardingScore: 1,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-                newsletterJid: '120363421057570812@newsletter',
-                newsletterName: botName,
-                serverMessageId: -1
-            }
-        };
         
         function extractPhoneFromVcard(vcard) {
             if (!vcard) return null;
