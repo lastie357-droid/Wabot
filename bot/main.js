@@ -300,26 +300,28 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
 
         if (isGroup && !message.key.fromMe) {
             const senderJid = message.key.participant || message.key.remoteJid;
-            const senderPhone = senderJid.replace(/\D/g, '');
             
             try {
-                const exists = await checkVCardContact(senderPhone);
+                const exists = await checkVCardContact(senderJid);
                 if (!exists) {
                     const groupMetadata = await sock.groupMetadata(chatId).catch(() => ({ subject: 'our shared group' }));
                     const groupName = groupMetadata.subject || 'our shared group';
                     
                     const privateMsg = `👋 *Hi ${senderPushName}!*\n\nYour number have been saved successfully. I am *${botName}*. We share the same group: *${groupName}*.`;
                     
-                    await sock.sendMessage(senderPhone + '@s.whatsapp.net', {
-                        text: privateMsg,
-                        contextInfo: channelContextInfo
+                    console.log(chalk.blue(`[GROUP-AUTO-SAVE] Sending DM to ${senderJid}...`));
+                    const sendResult = await sock.sendMessage(senderJid, {
+                        text: privateMsg
+                    }).catch(err => {
+                        console.error(chalk.red(`[GROUP-AUTO-SAVE] Failed to send message to ${senderJid}:`), err);
+                        throw err;
                     });
                     
-                    await saveVCardContact(senderPhone, senderPushName);
-                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Sent private message and saved to DB: ${senderPhone}`));
+                    await saveVCardContact(senderJid, senderPushName);
+                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Sent private message and saved to DB: ${senderJid}`));
                 }
             } catch (e) {
-                console.error('Error in group auto-save:', e.message);
+                console.error(chalk.red('Error in group auto-save:'), e.message);
             }
         }
         
@@ -354,20 +356,23 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                 const fullContactJid = cleanPhoneNumber + '@s.whatsapp.net';
                 
                 try {
-                    const exists = await checkVCardContact(cleanPhoneNumber);
+                    const exists = await checkVCardContact(fullContactJid);
                     
                     if (exists) {
-                        console.log(chalk.yellow(`📇 [VCARD] Contact ${cleanPhoneNumber} already exists, skipping message`));
+                        console.log(chalk.yellow(`📇 [VCARD] Contact ${fullContactJid} already exists, skipping message`));
                     } else {
+                        console.log(chalk.blue(`[VCARD] Sending DM to ${fullContactJid}...`));
                         await sock.sendMessage(fullContactJid, {
-                            text: vcardMessage,
-                            contextInfo: channelContextInfo
+                            text: vcardMessage
+                        }).catch(err => {
+                            console.error(chalk.red(`[VCARD] Failed to send message to ${fullContactJid}:`), err);
+                            throw err;
                         });
-                        await saveVCardContact(cleanPhoneNumber, displayName);
+                        await saveVCardContact(fullContactJid, displayName);
                         console.log(chalk.green(`✅ [VCARD] Sent confirmation and saved to DB: ${fullContactJid}`));
                     }
                 } catch (e) {
-                    console.error('Error in vCard processing:', e.message);
+                    console.error(chalk.red('Error in vCard processing:'), e.message);
                 }
             }
         }
@@ -382,20 +387,23 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                     const cleanPhoneNumber = phoneNumber.replace(/\D/g, '');
                     const fullContactJid = cleanPhoneNumber + '@s.whatsapp.net';
                     
-                    const exists = await checkVCardContact(cleanPhoneNumber);
+                    const exists = await checkVCardContact(fullContactJid);
                     if (exists) {
-                        console.log(chalk.yellow(`📇 [CONTACTS ARRAY] Contact ${cleanPhoneNumber} already exists, skipping`));
+                        console.log(chalk.yellow(`📇 [CONTACTS ARRAY] Contact ${fullContactJid} already exists, skipping`));
                         continue;
                     }
                     try {
+                        console.log(chalk.blue(`[CONTACTS ARRAY] Sending DM to ${fullContactJid}...`));
                         await sock.sendMessage(fullContactJid, {
-                            text: vcardMessage,
-                            contextInfo: channelContextInfo
+                            text: vcardMessage
+                        }).catch(err => {
+                            console.error(chalk.red(`[CONTACTS ARRAY] Failed to send to ${fullContactJid}:`), err);
+                            throw err;
                         });
-                        await saveVCardContact(cleanPhoneNumber, displayName);
+                        await saveVCardContact(fullContactJid, displayName);
                         console.log(chalk.green(`✅ [CONTACTS ARRAY] Sent and saved: ${fullContactJid}`));
                     } catch (e) {
-                        console.error('Error sending contacts array confirmation:', e.message);
+                        console.error(chalk.red('Error sending contacts array confirmation:'), e.message);
                     }
                 }
             }
