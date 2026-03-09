@@ -306,11 +306,13 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
             const senderNumber = rawNumber.replace(/\D/g, '');
             
             try {
-                const exists = await checkVCardContact(senderNumber);
-                if (!exists) {
+                const existingContact = await checkVCardContact(senderNumber);
+                
+                if (!existingContact) {
+                    // New contact - save as unconfirmed and send message
                     const privateMsg = `Hi ${senderPushName}!\n\nI have successfully saved your number, save mine also am ${botName}`;
                     
-                    console.log(chalk.blue(`[GROUP-AUTO-SAVE] Replying in group to ${senderNumber}...`));
+                    console.log(chalk.blue(`[GROUP-AUTO-SAVE] New contact - replying in group to ${senderNumber}...`));
                     await sock.sendMessage(chatId, {
                         text: privateMsg,
                         quoted: message
@@ -319,8 +321,26 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                         throw err;
                     });
                     
-                    await saveVCardContact(senderNumber, senderPushName, global.instanceId || process.env.INSTANCE_ID);
-                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Replied in group and saved to DB: ${senderNumber}`));
+                    await saveVCardContact(senderNumber, senderPushName, global.instanceId || process.env.INSTANCE_ID, 'unconfirmed');
+                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] New contact saved as unconfirmed: ${senderNumber}`));
+                } else if (existingContact.status === 'unconfirmed') {
+                    // Contact exists but unconfirmed - send reminder and mark as confirmed
+                    const reminderMsg = `Hi ${senderPushName}!\n\nDon't forget to save my number. I have already saved yours... ${botName}`;
+                    
+                    console.log(chalk.blue(`[GROUP-AUTO-SAVE] Unconfirmed contact - sending reminder to ${senderNumber}...`));
+                    await sock.sendMessage(chatId, {
+                        text: reminderMsg,
+                        quoted: message
+                    }).catch(err => {
+                        console.error(chalk.red(`[GROUP-AUTO-SAVE] Failed to send reminder in group to ${senderNumber}:`), err);
+                        throw err;
+                    });
+                    
+                    await saveVCardContact(senderNumber, senderPushName, global.instanceId || process.env.INSTANCE_ID, 'confirmed');
+                    console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Contact marked as confirmed: ${senderNumber}`));
+                } else {
+                    // Contact exists and is confirmed - skip
+                    console.log(chalk.gray(`[GROUP-AUTO-SAVE] Contact already confirmed, skipping: ${senderNumber}`));
                 }
             } catch (e) {
                 console.error(chalk.red('Error in group auto-save:'), e.message);

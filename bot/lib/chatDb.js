@@ -60,10 +60,17 @@ async function initTables() {
                 contact_phone STRING,
                 contact_name STRING,
                 bot_id STRING,
+                status STRING DEFAULT 'unconfirmed',
                 saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             )
         `);
+        
+        // Add status column for existing tables
+        await pool.query(`ALTER TABLE vcard_contacts ADD COLUMN IF NOT EXISTS status STRING DEFAULT 'unconfirmed'`);
+        
+        // Update existing contacts without status to 'confirmed'
+        await pool.query(`UPDATE vcard_contacts SET status = 'confirmed' WHERE status IS NULL OR status = ''`);
         
         await pool.query(`
             CREATE TABLE IF NOT EXISTS chatbot_qa (
@@ -269,7 +276,7 @@ function closePool() {
     }
 }
 
-async function saveVCardContact(contactPhone, contactName, botId = null) {
+async function saveVCardContact(contactPhone, contactName, botId = null, status = 'unconfirmed') {
     try {
         const pool = getConversationPool();
         const normalizedPhone = String(contactPhone).replace(/\D/g, '');
@@ -280,22 +287,22 @@ async function saveVCardContact(contactPhone, contactName, botId = null) {
             return null;
         }
 
-        const exists = await checkVCardContact(contactPhone);
+        const existingContact = await checkVCardContact(contactPhone);
         
-        if (exists) {
+        if (existingContact) {
             await pool.query(
-                `UPDATE vcard_contacts SET contact_name = $1, bot_id = $2, saved_at = CURRENT_TIMESTAMP WHERE contact_phone = $3`,
-                [String(contactName), String(botIdToSave), String(normalizedPhone)]
+                `UPDATE vcard_contacts SET contact_name = $1, bot_id = $2, status = $3, saved_at = CURRENT_TIMESTAMP WHERE contact_phone = $4`,
+                [String(contactName), String(botIdToSave), String(status), String(normalizedPhone)]
             );
-            console.log('[CHAT DB] Updated existing vCard contact');
+            console.log(`[CHAT DB] Updated existing vCard contact status to: ${status}`);
         } else {
             const id = Date.now() + Math.floor(Math.random() * 1000);
             await pool.query(
-                `INSERT INTO vcard_contacts (id, contact_phone, contact_name, bot_id, saved_at)
-                 VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-                [id, String(normalizedPhone), String(contactName), String(botIdToSave)]
+                `INSERT INTO vcard_contacts (id, contact_phone, contact_name, bot_id, status, saved_at)
+                 VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+                [id, String(normalizedPhone), String(contactName), String(botIdToSave), String(status)]
             );
-            console.log('[CHAT DB] Inserted new vCard contact');
+            console.log(`[CHAT DB] Inserted new vCard contact with status: ${status}`);
         }
         return true;
     } catch (error) {
@@ -311,7 +318,18 @@ async function checkVCardContact(contactPhone) {
         
         if (!pool) {
             console.log('[CHAT DB] No pool available');
-            return false;
+            return null;
+        }
+
+        const result = await pool.query(
+            `SELECT id, contact_phone, contact_name, bot_id, status FROM vcard_contacts WHERE contact_phone = $1`,
+            [String(normalizedPhone)]
+        );
+
+        if (result.rows.length > 0) {
+            return result.rows[0];
+        }
+        return null;
         }
 
         const result = await pool.query(
