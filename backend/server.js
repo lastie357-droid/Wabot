@@ -637,9 +637,6 @@ async function initDatabase() {
       portCounter = Math.max(portCounter, result.rows[0].max_port);
     }
     
-    // Fix any invalid ports in DB
-    await executeQuery('UPDATE bot_instances SET port = 4000 + (FLOOR(RANDOM() * 1000))::INTEGER WHERE port >= 65536 OR port < 1024');
-
     console.log(`✓ Database initialized successfully for ${SERVERNAME} (${useSQLite ? 'SQLite' : 'PostgreSQL'})`);
     console.log(`✓ Port counter initialized at ${portCounter}`);
   } catch (err) {
@@ -659,6 +656,32 @@ function getNextPort() {
   portCounter += 1;
   if (portCounter > 65000) portCounter = 4000;
   return portCounter;
+}
+
+async function findFreePort() {
+  const net = require('net');
+  const startPort = 4000;
+  const endPort = 65000;
+  
+  for (let port = startPort; port <= endPort; port++) {
+    const inUse = Object.values(instancePorts).includes(port);
+    if (inUse) continue;
+    
+    const available = await new Promise((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => resolve(false));
+      server.once('listening', () => {
+        server.close();
+        resolve(true);
+      });
+      server.listen(port, '0.0.0.0');
+    });
+    
+    if (available) {
+      return port;
+    }
+  }
+  throw new Error('No free ports available');
 }
 
 async function getInstanceStatus(instanceId, port) {
@@ -707,6 +730,15 @@ function bufferReviver(key, value) {
 
 async function startInstanceInternal(instanceId, phoneNumber, port, sessionData = null, isDevMode = false) {
   const botDir = path.join(__dirname, '..', 'bot');
+  
+  // Find a free port dynamically - don't store in DB
+  try {
+    port = await findFreePort();
+    console.log(chalk.blue(`📌 Assigned free port ${port} for instance ${instanceId}`));
+  } catch (e) {
+    console.error(chalk.red('❌ No free ports available'));
+    return false;
+  }
   
   try {
     if (botProcesses[instanceId]) {
@@ -908,26 +940,11 @@ function schedulePairingBotStart(instanceId, phoneNumber, port) {
         await new Promise(r => setTimeout(r, 2000));
       }
       
-      // Check if port is already in use by another bot, get new port if needed
-      let assignedPort = bot.port || port;
-      const portInUse = Object.values(instancePorts).includes(assignedPort) || 
-                        (botProcesses[instanceId] === undefined && assignedPort in botProcesses);
-      
-      if (portInUse) {
-        assignedPort = getNextPort();
-        // Make sure it's not in use
-        while (Object.values(instancePorts).includes(assignedPort)) {
-          assignedPort = getNextPort();
-        }
-        console.log(chalk.yellow(`⚠️ Port ${bot.port || port} in use, assigned new port ${assignedPort}`));
-        await executeQuery('UPDATE bot_instances SET port = $1 WHERE id = $2', [assignedPort, instanceId]);
-      }
-      
-      // Start bot exactly like initial server startup - let startInstanceInternal handle everything
+      // Start bot - port will be assigned dynamically by startInstanceInternal
       const isDevMode = bot.start_status === 'new' || bot.start_status === 'pending';
-      console.log(chalk.blue(`🚀 Starting bot ${instanceId} on port ${assignedPort}...`));
+      console.log(chalk.blue(`🚀 Starting bot ${instanceId}...`));
       
-      await startInstanceInternal(instanceId, bot.phone_number || phoneNumber, assignedPort, bot.session_data, isDevMode);
+      await startInstanceInternal(instanceId, bot.phone_number || phoneNumber, null, bot.session_data, isDevMode);
       console.log(chalk.green(`✅ Scheduled start completed for bot ${instanceId}`));
       
     } catch (e) {
@@ -1270,11 +1287,7 @@ app.post('/api/instances/:instanceId/pair', async (req, res) => {
       await executeQuery('UPDATE bot_instances SET server_name = $1 WHERE id = $2', [finalServer, instanceId]);
     }
     
-    // Assign port if not exists
-    if (!port) {
-      port = getNextPort();
-      await executeQuery('UPDATE bot_instances SET port = $1 WHERE id = $2', [port, instanceId]);
-    }
+    // Port will be assigned dynamically on start, not stored in DB
     
     // Maintain existing start_status if it exists, otherwise set to 'new'
     if (!instance.start_status) {
@@ -1525,11 +1538,8 @@ app.post('/api/instances/:instanceId/regenerate-code', async (req, res) => {
     }
 
     const instance = result.rows[0];
-    let port = instance.port;
-    if (!port) {
-       port = getNextPort();
-       await executeQuery('UPDATE bot_instances SET port = $1 WHERE id = $2', [port, instanceId]);
-    }
+    // Use in-memory port if bot is running, otherwise will be assigned on start
+    let port = instancePorts[instanceId] || (instance.port && instance.port < 65536 ? instance.port : null);
 
     // Ensure instance is running before trying to regenerate code
     let isAlive = false;
@@ -1604,12 +1614,8 @@ app.get('/api/instances/:instanceId/pairing-code', async (req, res) => {
     }
 
     const instance = result.rows[0];
-    let port = instance.port;
-    
-    if (!port) {
-      port = getNextPort();
-      await executeQuery('UPDATE bot_instances SET port = $1 WHERE id = $2', [port, instanceId]);
-    }
+    // Use in-memory port if running, otherwise will be assigned on start
+    let port = instancePorts[instanceId] || (instance.port && instance.port < 65536 ? instance.port : null);
 
     // NOTE: Bot should NOT be started here - it will be started by globalpair.js AFTER pairing is complete
     // This endpoint is only used for the OLD flow where bot generates its own pairing code
@@ -1731,16 +1737,12 @@ app.post('/api/instances/:instanceId/start', async (req, res) => {
 
     const instance = result.rows[0];
     
-    // Allow starting on any server for pairing purposes
-    let port = instance.port;
-    if (!port) {
-      port = getNextPort();
-      await executeQuery('UPDATE bot_instances SET port = $1 WHERE id = $2', [port, instanceId]);
-    }
+    // Allow starting on any server for pairing purposes - port assigned dynamically
+    let port = instancePorts[instanceId] || (instance.port && instance.port < 65536 ? instance.port : null);
 
     const success = await startInstanceInternal(instanceId, instance.phone_number, port, instance.session_data);
     if (success) {
-      return res.json({ message: 'Instance started', port });
+      return res.json({ message: 'Instance started', port: instancePorts[instanceId] });
     }
     res.status(500).json({ detail: 'Failed to start instance' });
   } catch (e) {
@@ -1794,12 +1796,8 @@ app.post('/api/instances/start-after-pairing', async (req, res) => {
     }
     
     const instance = result.rows[0];
-    let port = instance.port;
-    
-    if (!port) {
-      port = getNextPort();
-      await executeQuery('UPDATE bot_instances SET port = $1 WHERE id = $2', [port, instanceId]);
-    }
+    // Port will be assigned dynamically on start
+    let port = instancePorts[instanceId] || (instance.port && instance.port < 65536 ? instance.port : null);
     
     // Check if session files exist in local directory
     const botDir = path.join(__dirname, '..', 'bot');

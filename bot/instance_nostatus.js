@@ -42,7 +42,13 @@ const url = require('url');
 const args = process.argv.slice(2);
 const instanceId = args[0] || 'default';
 const phoneNumber = args[1] || '';
-const apiPort = parseInt(args[2]) || 3001;
+let apiPort = parseInt(args[2]) || 3001;
+
+// Validate port range
+if (apiPort >= 65536 || apiPort < 1024) {
+    apiPort = 4000 + Math.floor(Math.random() * 1000);
+    console.log(chalk.yellow(`⚠️ Invalid port received, using random port: ${apiPort}`));
+}
 
 global.instanceId = instanceId;
 global.chatbotEnabled = false;
