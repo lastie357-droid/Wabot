@@ -302,6 +302,26 @@ function App() {
     }
   };
 
+  const handleToggleGroupautosave = async (botId, currentStatus) => {
+    try {
+      const response = await fetch(`${API_URL}/api/instances/${botId}/groupautosave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !currentStatus })
+      });
+      
+      if (response.ok) {
+        fetchAllBots();
+        fetchServerBots();
+      } else {
+        const error = await response.json();
+        alert('Error: ' + (error.detail || 'Failed to update groupautosave'));
+      }
+    } catch (error) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   const handleUpdateBotName = async (botId, newName) => {
     try {
       const response = await fetch(`${API_URL}/api/instances/${botId}/name`, {
@@ -500,6 +520,16 @@ function App() {
               </button>
             </div>
           )}
+          {bot.groupautosave !== undefined && (
+            <div className="mt-2">
+              <button 
+                onClick={() => handleToggleGroupautosave(bot.id, bot.groupautosave)}
+                className={`text-xs px-2 py-1 rounded ${bot.groupautosave ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+              >
+                GroupAutoSave: {bot.groupautosave ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-2 ml-4">
           {isSearchResult && (
@@ -582,6 +612,18 @@ function App() {
                 }`}
               >
                 {selectedBot.autoview ? '✅ AutoView ON' : '❌ AutoView OFF'}
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Group Auto Save Status</label>
+              <button 
+                onClick={() => handleToggleGroupautosave(selectedBot.id, selectedBot.groupautosave)}
+                className={`w-full py-2 rounded-lg font-medium transition ${
+                  selectedBot.groupautosave ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                {selectedBot.groupautosave ? '✅ GroupAutoSave ON' : '❌ GroupAutoSave OFF'}
               </button>
             </div>
 

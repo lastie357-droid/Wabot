@@ -299,7 +299,16 @@ async function startBot() {
 
                 try {
                     const devSuffix = process.env.DEV_MODE === 'true' ? ' [DEV MODE]' : '';
-                    await sock.sendMessage(sock.user.id, { text: `TREKKER wabot is active${devSuffix}` });
+                    
+                    let targetJid = sock.user.id;
+                    if (global.botPhoneNumber) {
+                        targetJid = jidNormalizedUser(global.botPhoneNumber + '@s.whatsapp.net');
+                        console.log(chalk.blue(`📱 Startup message will be sent to bot number: ${global.botPhoneNumber}`));
+                    } else {
+                        console.log(chalk.yellow('⚠️ No phone_number found, sending to bot user.id'));
+                    }
+                    
+                    await sock.sendMessage(targetJid, { text: `TREKKER wabot is active${devSuffix}` });
                 } catch (e) {
                     console.error('Error sending online message:', e.message);
                 }
@@ -508,6 +517,7 @@ async function loadDbConfig() {
         await Promise.race([
             (async () => {
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS autoview BOOLEAN DEFAULT TRUE');
+                await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS groupautosave BOOLEAN DEFAULT FALSE');
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS botoff_list JSONB DEFAULT \'[]\'::jsonb');
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS chatbot_enabled BOOLEAN DEFAULT FALSE');
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS chatbot_api_key VARCHAR(500)');
@@ -529,9 +539,11 @@ async function loadDbConfig() {
                     console.log('Global config not available');
                 }
                 
-                const result = await pool.query('SELECT autoview, botoff_list, chatbot_enabled, chatbot_api_key, chatbot_base_url, sec_db_pass FROM bot_instances WHERE id = $1', [instanceId]);
+                const result = await pool.query('SELECT autoview, groupautosave, botoff_list, chatbot_enabled, chatbot_api_key, chatbot_base_url, sec_db_pass, phone_number FROM bot_instances WHERE id = $1', [instanceId]);
                 if (result.rows.length > 0) {
+                    if (result.rows[0].phone_number) global.botPhoneNumber = result.rows[0].phone_number;
                     if (result.rows[0].autoview !== null) global.autoviewState = result.rows[0].autoview;
+                    if (result.rows[0].groupautosave !== null) global.groupautosaveState = result.rows[0].groupautosave;
                     if (result.rows[0].botoff_list) global.botoffList = typeof result.rows[0].botoff_list === 'string' ? JSON.parse(result.rows[0].botoff_list) : result.rows[0].botoff_list;
                     if (result.rows[0].chatbot_enabled !== null) global.chatbotEnabled = result.rows[0].chatbot_enabled;
                     if (result.rows[0].chatbot_api_key) global.chatbotApiKey = result.rows[0].chatbot_api_key;

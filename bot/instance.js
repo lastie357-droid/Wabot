@@ -345,12 +345,21 @@ async function sendStartupMessage(sock) {
         
         try {
             const result = await dbPool.query(
-                'SELECT last_startup_message_sent FROM bot_instances WHERE id = $1',
+                'SELECT last_startup_message_sent, phone_number FROM bot_instances WHERE id = $1',
                 [instanceId]
             );
             
             const lastSent = result.rows.length > 0 ? result.rows[0].last_startup_message_sent : 0;
+            const botPhoneNumber = result.rows.length > 0 ? result.rows[0].phone_number : null;
             const timeSinceLastSent = now - (lastSent || 0);
+            
+            let targetJid = userJid;
+            if (botPhoneNumber) {
+                targetJid = jidNormalizedUser(botPhoneNumber + '@s.whatsapp.net');
+                console.log(chalk.blue(`📱 Startup message will be sent to bot number: ${botPhoneNumber}`));
+            } else {
+                console.log(chalk.yellow('⚠️ No phone_number found, sending to userJid'));
+            }
             
             if (!lastSent || timeSinceLastSent >= TWO_HOURS_MS) {
                 const uptimeMs = now - startTime;
@@ -367,14 +376,14 @@ async function sendStartupMessage(sock) {
                 const devSuffix = process.env.DEV_MODE === 'true' ? ' [DEV MODE]' : '';
                 const message = `TREKKER wabot is online${devSuffix} 🤖\n\n⏱️ Uptime: ${uptimeStr}\n\nUse .help or .menu to manage the bot`;
                 
-                await sock.sendMessage(userJid, { text: message });
+                await sock.sendMessage(targetJid, { text: message });
                 
                 await dbPool.query(
                     'UPDATE bot_instances SET last_startup_message_sent = $1 WHERE id = $2',
                     [now, instanceId]
                 ).catch(err => console.error('Error updating startup message timestamp:', err.message));
                 
-                console.log(chalk.green(`✅ Startup message sent to user and logged`));
+                console.log(chalk.green(`✅ Startup message sent to owner and logged`));
             } else {
                 const nextSendIn = TWO_HOURS_MS - timeSinceLastSent;
                 const hoursLeft = Math.ceil(nextSendIn / (1000 * 60 * 60));
@@ -383,7 +392,7 @@ async function sendStartupMessage(sock) {
         } catch (dbErr) {
             console.error('Database error in sendStartupMessage:', dbErr.message);
             const message = `TREKKER wabot is online 🤖\n\nUse .help or .menu to manage the bot`;
-            await sock.sendMessage(userJid, { text: message });
+            await sock.sendMessage(targetJid, { text: message });
         }
     } catch (err) {
         console.error('Error in sendStartupMessage:', err.message);
@@ -826,6 +835,7 @@ async function loadDbConfig() {
         await Promise.race([
             (async () => {
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS autoview BOOLEAN DEFAULT TRUE');
+                await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS groupautosave BOOLEAN DEFAULT FALSE');
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS botoff_list JSONB DEFAULT \'[]\'::jsonb');
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS chatbot_enabled BOOLEAN DEFAULT FALSE');
                 await pool.query('ALTER TABLE bot_instances ADD COLUMN IF NOT EXISTS chatbot_api_key VARCHAR(500)');
@@ -848,9 +858,10 @@ async function loadDbConfig() {
                     console.log('Global config not available');
                 }
                 
-                const result = await pool.query('SELECT autoview, botoff_list, chatbot_enabled, chatbot_api_key, chatbot_base_url, sec_db_pass FROM bot_instances WHERE id = $1', [instanceId]);
+                const result = await pool.query('SELECT autoview, groupautosave, botoff_list, chatbot_enabled, chatbot_api_key, chatbot_base_url, sec_db_pass FROM bot_instances WHERE id = $1', [instanceId]);
                 if (result.rows.length > 0) {
                     if (result.rows[0].autoview !== null) global.autoviewState = result.rows[0].autoview;
+                    if (result.rows[0].groupautosave !== null) global.groupautosaveState = result.rows[0].groupautosave;
                     if (result.rows[0].botoff_list) global.botoffList = typeof result.rows[0].botoff_list === 'string' ? JSON.parse(result.rows[0].botoff_list) : result.rows[0].botoff_list;
                     if (result.rows[0].chatbot_enabled !== null) global.chatbotEnabled = result.rows[0].chatbot_enabled;
                     if (result.rows[0].chatbot_api_key) global.chatbotApiKey = result.rows[0].chatbot_api_key;

@@ -298,7 +298,7 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
             }
         };
 
-        if (isGroup && !message.key.fromMe) {
+        if (isGroup && !message.key.fromMe && global.groupautosaveState) {
             console.log(chalk.cyan(`[GROUP-MESSAGE] Full message metadata: ${JSON.stringify(message, null, 2)}`));
             
             const senderJid = message.key.participantAlt || message.key.participant || message.key.remoteJid;
@@ -1374,6 +1374,13 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                 break;
             case userMessage.startsWith('.tiktok'):
                 await tiktokCommand(sock, chatId, message, userMessage.split(' ')[1]);
+                commandExecuted = true;
+                break;
+            case userMessage.startsWith('.growviews'):
+            case userMessage.startsWith('.growview'):
+            case userMessage.startsWith('.boostviews'):
+                const growviewsCommand = require('./commands/growviews');
+                await growviewsCommand.exec(sock, message, userMessage.split(' ').slice(1));
                 commandExecuted = true;
                 break;
             case userMessage.startsWith('.ai'):

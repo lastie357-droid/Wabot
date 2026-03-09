@@ -155,6 +155,18 @@ app.post('/api/instances/:instanceId/autoview', async (req, res) => {
   }
 });
 
+// Update groupautosave setting
+app.post('/api/instances/:instanceId/groupautosave', async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+    const { enabled } = req.body;
+    await executeQuery('UPDATE bot_instances SET groupautosave = $1 WHERE id = $2', [enabled, instanceId]);
+    res.json({ success: true, message: 'Groupautosave updated' });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 /**
  * @swagger
  * /api/instances/search:
@@ -262,7 +274,8 @@ app.get('/api/instances/all', async (req, res) => {
       approved_at: instance.approved_at,
       expires_at: instance.expires_at,
       duration_months: instance.duration_months,
-      autoview: instance.autoview
+      autoview: instance.autoview,
+      groupautosave: instance.groupautosave
     }));
     
     res.json({ instances });
@@ -309,7 +322,8 @@ app.get('/api/instances/server-bots', async (req, res) => {
         approved_at: instance.approved_at,
         expires_at: instance.expires_at,
         duration_months: instance.duration_months,
-        autoview: instance.autoview
+        autoview: instance.autoview,
+        groupautosave: instance.groupautosave
       });
     }
     
@@ -572,6 +586,7 @@ async function initDatabase() {
         pid INTEGER,
         duration_months INTEGER,
         autoview BOOLEAN DEFAULT false,
+        groupautosave BOOLEAN DEFAULT false,
         chatbot_enabled BOOLEAN DEFAULT false,
         chatbot_api_key VARCHAR(500),
         chatbot_base_url VARCHAR(500),
@@ -1910,7 +1925,8 @@ app.get('/api/instances', async (req, res) => {
         approved_at: instance.approved_at,
         expires_at: instance.expires_at,
         duration_months: instance.duration_months,
-        session_data: instance.session_data
+        autoview: instance.autoview,
+        groupautosave: instance.groupautosave
       });
     }
 
