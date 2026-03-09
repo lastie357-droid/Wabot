@@ -330,17 +330,9 @@ async function checkVCardContact(contactPhone) {
             return result.rows[0];
         }
         return null;
-        }
-
-        const result = await pool.query(
-            `SELECT id FROM vcard_contacts WHERE contact_phone = $1`,
-            [String(normalizedPhone)]
-        );
-        console.log('[CHAT DB] Check result rows:', result.rows.length);
-        return result.rows.length > 0;
     } catch (error) {
         console.log('[CHAT DB] Check vCard error:', error.message);
-        return false;
+        return null;
     }
 }
 
