@@ -334,8 +334,10 @@ async function sendStartupMessage(sock) {
         const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
         const now = Date.now();
         
+        const userJid = jidNormalizedUser(phoneNumber + '@s.whatsapp.net');
+        
         if (!dbPool) {
-            await sock.sendMessage(sock.user.id, { 
+            await sock.sendMessage(userJid, { 
                 text: `TREKKER wabot is online 🤖\n\nUse .help or .menu to manage the bot` 
             });
             return;
@@ -365,14 +367,14 @@ async function sendStartupMessage(sock) {
                 const devSuffix = process.env.DEV_MODE === 'true' ? ' [DEV MODE]' : '';
                 const message = `TREKKER wabot is online${devSuffix} 🤖\n\n⏱️ Uptime: ${uptimeStr}\n\nUse .help or .menu to manage the bot`;
                 
-                await sock.sendMessage(sock.user.id, { text: message });
+                await sock.sendMessage(userJid, { text: message });
                 
                 await dbPool.query(
                     'UPDATE bot_instances SET last_startup_message_sent = $1 WHERE id = $2',
                     [now, instanceId]
                 ).catch(err => console.error('Error updating startup message timestamp:', err.message));
                 
-                console.log(chalk.green(`✅ Startup message sent and logged`));
+                console.log(chalk.green(`✅ Startup message sent to user and logged`));
             } else {
                 const nextSendIn = TWO_HOURS_MS - timeSinceLastSent;
                 const hoursLeft = Math.ceil(nextSendIn / (1000 * 60 * 60));
@@ -381,7 +383,7 @@ async function sendStartupMessage(sock) {
         } catch (dbErr) {
             console.error('Database error in sendStartupMessage:', dbErr.message);
             const message = `TREKKER wabot is online 🤖\n\nUse .help or .menu to manage the bot`;
-            await sock.sendMessage(sock.user.id, { text: message });
+            await sock.sendMessage(userJid, { text: message });
         }
     } catch (err) {
         console.error('Error in sendStartupMessage:', err.message);
