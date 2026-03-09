@@ -305,6 +305,7 @@ async function startBot() {
 
                 try {
                     const devSuffix = process.env.DEV_MODE === 'true' ? ' [DEV MODE]' : '';
+                    const botName = sock?.user?.name || sock?.user?.pushName || 'TREKKER BOT';
                     
                     let targetJid = sock.user.id;
                     if (global.botPhoneNumber) {
@@ -314,7 +315,16 @@ async function startBot() {
                         console.log(chalk.yellow('⚠️ No phone_number found, sending to bot user.id'));
                     }
                     
-                    await sock.sendMessage(targetJid, { text: `TREKKER wabot is active${devSuffix}` });
+                    const message = `
+┏━━〔 🤖 ${botName} 〕━━┓
+┃ ✅ Status    : Online${devSuffix}
+┃ ⏱️ Uptime   : 0s
+┃ 📱 Bot      : ${global.botPhoneNumber || 'N/A'}
+┗━━━━━━━━━━━━━━━━━━━┛
+
+Use .help or .menu to manage the bot`.trim();
+                    
+                    await sock.sendMessage(targetJid, { text: message });
                 } catch (e) {
                     console.error('Error sending online message:', e.message);
                 }

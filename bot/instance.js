@@ -158,6 +158,62 @@ const SERVER_NAME = process.env.SERVERNAME || process.env.SERVER_NAME || 'server
 let dbPool;
 const DATABASE_URL = process.env.DATABASE_URL;
 
+// Uptime file handling
+const UPTIME_FILE = path.join(__dirname, 'data', 'uptime.json');
+let startTime = Date.now();
+
+function getBotStartTime() {
+    try {
+        if (fs.existsSync(UPTIME_FILE)) {
+            const data = JSON.parse(fs.readFileSync(UPTIME_FILE, 'utf8'));
+            return data.startTime;
+        }
+    } catch (e) {
+        console.error('Error reading uptime file:', e);
+    }
+    return null;
+}
+
+function setBotStartTime() {
+    try {
+        const dir = path.join(__dirname, 'data');
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        const time = Date.now();
+        fs.writeFileSync(UPTIME_FILE, JSON.stringify({ startTime: time }, null, 2));
+        return time;
+    } catch (e) {
+        console.error('Error writing uptime file:', e);
+        return Date.now();
+    }
+}
+
+// Initialize startTime from file or create new
+const savedStartTime = getBotStartTime();
+if (savedStartTime) {
+    startTime = savedStartTime;
+} else {
+    startTime = setBotStartTime();
+}
+
+function formatUptime(seconds) {
+    const days = Math.floor(seconds / (24 * 60 * 60));
+    seconds = seconds % (24 * 60 * 60);
+    const hours = Math.floor(seconds / (60 * 60));
+    seconds = seconds % (60 * 60);
+    const minutes = Math.floor(seconds / 60);
+    seconds = Math.floor(seconds % 60);
+
+    let time = '';
+    if (days > 0) time += `${days}d `;
+    if (hours > 0) time += `${hours}h `;
+    if (minutes > 0) time += `${minutes}m `;
+    if (seconds > 0 || time === '') time += `${seconds}s`;
+
+    return time.trim();
+}
+
 if (DATABASE_URL) {
     dbPool = new (require('pg').Pool)({
         connectionString: DATABASE_URL,
@@ -344,20 +400,28 @@ async function sendStartupMessage(sock) {
         const userJid = jidNormalizedUser(phoneNumber + '@s.whatsapp.net');
         
         if (!dbPool) {
+            const botName = sock?.user?.name || sock?.user?.pushName || 'TREKKER BOT';
             await sock.sendMessage(userJid, { 
-                text: `TREKKER wabot is online 🤖\n\nUse .help or .menu to manage the bot` 
+                text: `
+┏━━〔 🤖 ${botName} 〕━━┓
+┃ ✅ Status    : Online
+┃ ⏱️ Uptime   : 0s
+┗━━━━━━━━━━━━━━━━━━━┛
+
+Use .help or .menu to manage the bot`.trim()
             });
             return;
         }
         
         try {
             const result = await dbPool.query(
-                'SELECT last_startup_message_sent, phone_number FROM bot_instances WHERE id = $1',
+                'SELECT last_startup_message_sent, phone_number, created_at FROM bot_instances WHERE id = $1',
                 [instanceId]
             );
             
             const lastSent = result.rows.length > 0 ? result.rows[0].last_startup_message_sent : 0;
             const botPhoneNumber = result.rows.length > 0 ? result.rows[0].phone_number : null;
+            const botCreatedAt = result.rows.length > 0 ? result.rows[0].created_at : null;
             const timeSinceLastSent = now - (lastSent || 0);
             
             let targetJid = userJid;
@@ -369,19 +433,38 @@ async function sendStartupMessage(sock) {
             }
             
             if (!lastSent || timeSinceLastSent >= TWO_HOURS_MS) {
-                const uptimeMs = now - startTime;
-                const hours = Math.floor(uptimeMs / (1000 * 60 * 60));
-                const minutes = Math.floor((uptimeMs % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((uptimeMs % (1000 * 60)) / 1000);
+                // Use bot creation time from DB for uptime
+                let botStartTime = startTime;
+                if (botCreatedAt) {
+                    botStartTime = new Date(botCreatedAt).getTime();
+                }
+                const uptimeMs = now - botStartTime;
+                const uptimeInSeconds = Math.floor(uptimeMs / 1000);
+                const days = Math.floor(uptimeInSeconds / (24 * 60 * 60));
+                let secs = uptimeInSeconds % (24 * 60 * 60);
+                const hours = Math.floor(secs / (60 * 60));
+                secs = secs % (60 * 60);
+                const minutes = Math.floor(secs / 60);
+                secs = Math.floor(secs % 60);
                 
-                const uptimeStr = hours > 0 
-                    ? `${hours}h ${minutes}m ${seconds}s`
-                    : minutes > 0
-                    ? `${minutes}m ${seconds}s`
-                    : `${seconds}s`;
+                let uptimeStr = '';
+                if (days > 0) uptimeStr += `${days}d `;
+                if (hours > 0) uptimeStr += `${hours}h `;
+                if (minutes > 0) uptimeStr += `${minutes}m `;
+                if (secs > 0 || uptimeStr === '') uptimeStr += `${secs}s`;
+                uptimeStr = uptimeStr.trim();
                 
                 const devSuffix = process.env.DEV_MODE === 'true' ? ' [DEV MODE]' : '';
-                const message = `TREKKER wabot is online${devSuffix} 🤖\n\n⏱️ Uptime: ${uptimeStr}\n\nUse .help or .menu to manage the bot`;
+                const botName = sock?.user?.name || sock?.user?.pushName || 'TREKKER BOT';
+                
+                const message = `
+┏━━〔 🤖 ${botName} 〕━━┓
+┃ ✅ Status    : Online${devSuffix}
+┃ ⏱️ Uptime   : ${uptimeStr}
+┃ 📱 Bot      : ${botPhoneNumber || 'N/A'}
+┗━━━━━━━━━━━━━━━━━━━┛
+
+Use .help or .menu to manage the bot`.trim();
                 
                 await sock.sendMessage(targetJid, { text: message });
                 
@@ -398,7 +481,14 @@ async function sendStartupMessage(sock) {
             }
         } catch (dbErr) {
             console.error('Database error in sendStartupMessage:', dbErr.message);
-            const message = `TREKKER wabot is online 🤖\n\nUse .help or .menu to manage the bot`;
+            const botName = sock?.user?.name || sock?.user?.pushName || 'TREKKER BOT';
+            const message = `
+┏━━〔 🤖 ${botName} 〕━━┓
+┃ ✅ Status    : Online
+┃ ⏱️ Uptime   : 0s
+┗━━━━━━━━━━━━━━━━━━━┛
+
+Use .help or .menu to manage the bot`.trim();
             await sock.sendMessage(targetJid, { text: message });
         }
     } catch (err) {
