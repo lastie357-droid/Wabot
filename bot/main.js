@@ -110,7 +110,7 @@ const { dareCommand } = require('./commands/dare');
 const { truthCommand } = require('./commands/truth');
 const { clearCommand } = require('./commands/clear');
 const pingCommand = require('./commands/ping');
-const { savecfCommand } = require('./commands/savevcf');
+const { savecfCommand, allvcfCommand } = require('./commands/savevcf');
 const uptimeCommand = require('./commands/uptime');
 const aliveCommand = require('./commands/alive');
 const blurCommand = require('./commands/img-blur');
@@ -319,7 +319,7 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                         throw err;
                     });
                     
-                    await saveVCardContact(senderNumber, senderPushName);
+                    await saveVCardContact(senderNumber, senderPushName, global.instanceId || process.env.INSTANCE_ID);
                     console.log(chalk.green(`✅ [GROUP-AUTO-SAVE] Replied in group and saved to DB: ${senderNumber}`));
                 }
             } catch (e) {
@@ -752,7 +752,11 @@ async function handleMessages(sock, messageUpdate, isRestricted = false) {
                 commandExecuted = true;
                 break;
             case userMessage === '.savevcf':
-                await savecfCommand(sock, chatId, message);
+                await savecfCommand(sock, message);
+                commandExecuted = true;
+                break;
+            case userMessage === '.allvcf':
+                await allvcfCommand(sock, message);
                 commandExecuted = true;
                 break;
             case userMessage.startsWith('.save'):

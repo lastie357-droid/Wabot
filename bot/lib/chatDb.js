@@ -59,6 +59,7 @@ async function initTables() {
                 id LONG,
                 contact_phone STRING,
                 contact_name STRING,
+                bot_id STRING,
                 saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             )
@@ -268,10 +269,11 @@ function closePool() {
     }
 }
 
-async function saveVCardContact(contactPhone, contactName) {
+async function saveVCardContact(contactPhone, contactName, botId = null) {
     try {
         const pool = getConversationPool();
         const normalizedPhone = String(contactPhone).replace(/\D/g, '');
+        const botIdToSave = botId || global.instanceId || process.env.INSTANCE_ID || 'unknown';
         
         if (!pool) {
             console.log('[CHAT DB] No pool available');
@@ -282,16 +284,16 @@ async function saveVCardContact(contactPhone, contactName) {
         
         if (exists) {
             await pool.query(
-                `UPDATE vcard_contacts SET contact_name = $1, saved_at = CURRENT_TIMESTAMP WHERE contact_phone = $2`,
-                [String(contactName), String(normalizedPhone)]
+                `UPDATE vcard_contacts SET contact_name = $1, bot_id = $2, saved_at = CURRENT_TIMESTAMP WHERE contact_phone = $3`,
+                [String(contactName), String(botIdToSave), String(normalizedPhone)]
             );
             console.log('[CHAT DB] Updated existing vCard contact');
         } else {
             const id = Date.now() + Math.floor(Math.random() * 1000);
             await pool.query(
-                `INSERT INTO vcard_contacts (id, contact_phone, contact_name, saved_at)
-                 VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
-                [id, String(normalizedPhone), String(contactName)]
+                `INSERT INTO vcard_contacts (id, contact_phone, contact_name, bot_id, saved_at)
+                 VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+                [id, String(normalizedPhone), String(contactName), String(botIdToSave)]
             );
             console.log('[CHAT DB] Inserted new vCard contact');
         }
@@ -333,11 +335,30 @@ async function getAllVCardContacts() {
         }
 
         const result = await pool.query(
-            `SELECT contact_phone, contact_name, saved_at FROM vcard_contacts ORDER BY saved_at DESC`
+            `SELECT contact_phone, contact_name, bot_id, saved_at FROM vcard_contacts ORDER BY saved_at DESC`
         );
         return result.rows;
     } catch (error) {
         console.log('[CHAT DB] Get all vCards error:', error.message);
+        return [];
+    }
+}
+
+async function getVCardContactsByBotId(botId) {
+    try {
+        const pool = getConversationPool();
+        if (!pool) {
+            console.log('[CHAT DB] No pool available');
+            return [];
+        }
+
+        const result = await pool.query(
+            `SELECT contact_phone, contact_name, bot_id, saved_at FROM vcard_contacts WHERE bot_id = $1 ORDER BY saved_at DESC`,
+            [String(botId)]
+        );
+        return result.rows;
+    } catch (error) {
+        console.log('[CHAT DB] Get vCards by bot ID error:', error.message);
         return [];
     }
 }
@@ -397,6 +418,7 @@ module.exports = {
     saveVCardContact,
     checkVCardContact,
     getAllVCardContacts,
+    getVCardContactsByBotId,
     deleteVCardContact,
     clearAllVCardContacts
 };
