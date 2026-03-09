@@ -158,9 +158,8 @@ const SERVER_NAME = process.env.SERVERNAME || process.env.SERVER_NAME || 'server
 let dbPool;
 const DATABASE_URL = process.env.DATABASE_URL;
 
-// Uptime file handling
+// Uptime file handling - for startup message
 const UPTIME_FILE = path.join(__dirname, 'data', 'uptime.json');
-let startTime = Date.now();
 
 function getBotStartTime() {
     try {
@@ -188,6 +187,9 @@ function setBotStartTime() {
         return Date.now();
     }
 }
+
+// Declare startTime for uptime tracking
+let startTime = Date.now();
 
 // Initialize startTime from file or create new
 const savedStartTime = getBotStartTime();
@@ -246,7 +248,6 @@ const dataDir = path.join(instanceDir, 'data');
 
 let connectionStatus = 'initializing';
 let botSocket = null;
-let startTime = Date.now();
 let lastStatusSync = 0;
 const SYNC_INTERVAL = 60 * 60 * 1000;
 let connectionRetryCount = 0;
