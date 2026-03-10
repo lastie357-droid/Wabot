@@ -65,7 +65,34 @@ async function reactToStatus(sock, statusKey) {
             }
         );
     } catch (error) {
-        console.error('❌ Error reacting to status:', error.message);
+        if (error.message?.includes('rate-overlimit')) {
+            console.log('⚠️ Rate limit hit on reaction, waiting 1sec...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            try {
+                await sock.relayMessage(
+                    'status@broadcast',
+                    {
+                        reactionMessage: {
+                            key: {
+                                remoteJid: 'status@broadcast',
+                                id: statusKey.id,
+                                participant: statusKey.participant || statusKey.remoteJid,
+                                fromMe: false
+                            },
+                            text: '👀'
+                        }
+                    },
+                    {
+                        messageId: statusKey.id,
+                        statusJidList: [statusKey.remoteJid, statusKey.participant || statusKey.remoteJid]
+                    }
+                );
+            } catch (e) {
+                console.error('❌ Error reacting to status:', e.message);
+            }
+        } else {
+            console.error('❌ Error reacting to status:', error.message);
+        }
     }
 }
 
@@ -158,64 +185,16 @@ async function handleStatusUpdate(sock, status) {
             return;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        if (status.messages && status.messages.length > 0) {
-            const msg = status.messages[0];
-            if (msg.key && msg.key.remoteJid === 'status@broadcast') {
-                try {
-                    await sock.readMessages([msg.key]);
-                    const sender = msg.key.participant || msg.key.remoteJid;
-                    
-                    await reactToStatus(sock, msg.key);
-                    
-                } catch (err) {
-                    if (err.message?.includes('rate-overlimit')) {
-                        console.log('⚠️ Rate limit hit, waiting before retrying...');
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                        await sock.readMessages([msg.key]);
-                    } else {
-                        throw err;
-                    }
-                }
-                return;
-            }
-        }
-
-        if (status.key && status.key.remoteJid === 'status@broadcast') {
+        if (status.key && status.key.remoteJid === 'status@broadcast' && status.type === 'notify') {
             try {
                 await sock.readMessages([status.key]);
-                const sender = status.key.participant || status.key.remoteJid;
-                
                 await reactToStatus(sock, status.key);
-                
             } catch (err) {
                 if (err.message?.includes('rate-overlimit')) {
-                    console.log('⚠️ Rate limit hit, waiting before retrying...');
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    await sock.readMessages([status.key]);
-                } else {
-                    throw err;
+                    console.log('⚠️ Rate limit hit, discarding status');
+                    return;
                 }
-            }
-            return;
-        }
-
-        if (status.reaction && status.reaction.key.remoteJid === 'status@broadcast') {
-            try {
-                await sock.readMessages([status.reaction.key]);
-                const sender = status.reaction.key.participant || status.reaction.key.remoteJid;
-                
-                await reactToStatus(sock, status.reaction.key);
-                
-            } catch (err) {
-                if (err.message?.includes('rate-overlimit')) {
-                    console.log('⚠️ Rate limit hit, waiting before retrying...');
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    await sock.readMessages([status.reaction.key]);
-                } else {
-                    throw err;
-                }
+                throw err;
             }
             return;
         }

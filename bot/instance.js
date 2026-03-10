@@ -22,17 +22,25 @@ let PhoneNumber;
 
 const store = {
   messages: new Map(),
-  maxPerChat: 20,
-  contacts: new Map(),
+  maxPerChat: 5,
+  maxChats: 20,
+  chatOrder: [],
 
   bind: (ev) => {
     ev.on('messages.upsert', ({ messages }) => {
       for (const msg of messages) {
         if (!msg.key?.id) continue;
+        if (msg.messageStubType) continue;
+        if (msg.pushName === undefined && !msg.message) continue;
 
         const jid = msg.key.remoteJid;
         if (!store.messages.has(jid)) {
+          if (store.chatOrder.length >= store.maxChats) {
+            const oldestJid = store.chatOrder.shift();
+            store.messages.delete(oldestJid);
+          }
           store.messages.set(jid, new Map());
+          store.chatOrder.push(jid);
         }
 
         const chatMsgs = store.messages.get(jid);
@@ -735,8 +743,10 @@ async function startBot() {
             const messageBatch = [];
             for (const mek of messages) {
                 if (!mek.message || !mek.key?.id) continue;
+                if (mek.messageStubType) continue;
                 if (isSystemJid(mek.key.remoteJid)) continue;
                 if (processedMessages.has(mek.key.id)) continue;
+                if (mek.pushName === undefined && !mek.message) continue;
 
                 const MESSAGE_AGE_LIMIT = 5 * 60 * 1000;
                 if (mek.messageTimestamp) {
@@ -746,24 +756,6 @@ async function startBot() {
 
                 processedMessages.add(mek.key.id);
                 lastActivity = Date.now();
-
-                const from = mek.key.remoteJid;
-                if (mek.key && mek.key.id) {
-                    if (!store.messages.has(from)) {
-                        store.messages.set(from, new Map());
-                    }
-                    const chatMsgs = store.messages.get(from);
-                    chatMsgs.set(mek.key.id, mek);
-
-                    if (chatMsgs.size > store.maxPerChat) {
-                        const sortedIds = Array.from(chatMsgs.entries())
-                            .sort((a, b) => (a[1].messageTimestamp || 0) - (b[1].messageTimestamp || 0))
-                            .map(([id]) => id);
-                        for (let i = 0; i < sortedIds.length - store.maxPerChat; i++) {
-                            chatMsgs.delete(sortedIds[i]);
-                        }
-                    }
-                }
 
                 messageBatch.push(mek);
             }
