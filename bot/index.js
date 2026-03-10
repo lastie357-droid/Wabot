@@ -48,10 +48,43 @@ const { join } = require('path')
 // Import lightweight store
 const store = require('./lib/lightweight_store')
 
+// Import status cache manager
+const statusCache = require('./lib/statusCache')
+
 // Read session data from environment variable if provided
 const sessionDataFromEnv = process.env.SESSION_DATA;
 const instanceId = process.argv[2] || 'default';
 const sessionDir = path.join(__dirname, 'instances', instanceId, 'session');
+
+/**
+ * Flag bot as offline in database via API (with caching to avoid repetitive updates)
+ */
+async function flagBotOffline() {
+    try {
+        // Check if we should update DB (only if not recently cached)
+        if (!statusCache.shouldUpdateDB(instanceId)) {
+            console.log(chalk.gray(`[${instanceId}] ⏭️  Offline status already cached, skipping DB update`));
+            return;
+        }
+        
+        // Mark in cache to prevent repeated DB calls
+        statusCache.markBotStatus(instanceId, 'offline');
+        
+        // Try to notify backend if available
+        const backendPort = process.env.BACKEND_PORT || 5000;
+        const backendUrl = `http://127.0.0.1:${backendPort}/api/bot/${instanceId}/offline`;
+        
+        try {
+            await axios.post(backendUrl, {}, { timeout: 3000 });
+            console.log(chalk.yellow(`[${instanceId}] 📡 Flagged as offline in database`));
+        } catch (error) {
+            // If API call fails, it's OK - cache will prevent repeated attempts
+            console.log(chalk.gray(`[${instanceId}] Note: Backend update unavailable, using cache`));
+        }
+    } catch (error) {
+        console.error(`[${instanceId}] Error flagging offline:`, error.message);
+    }
+}
 
 if (sessionDataFromEnv) {
     try {
@@ -462,6 +495,9 @@ async function startXeonBotInc() {
             
             console.log(chalk.red(`[${instanceId}] Connection closed due to ${lastDisconnect?.error}, reconnecting ${shouldReconnect}`));
             
+            // Flag bot as offline (with cache optimization)
+            flagBotOffline().catch(e => console.error(`[${instanceId}] Offline flag error:`, e.message));
+            
             connectionAttempts++;
             
             // Check if we should stop reconnecting
@@ -493,6 +529,9 @@ async function startXeonBotInc() {
             connectionAttempts = 0;
             reconnectDelay = 5000;
             console.log(chalk.green('✅ Connected to WhatsApp'));
+            
+            // Clear offline cache on successful reconnect
+            statusCache.clearBotCache(instanceId);
             
             // Send startup message with uptime
             sendStartupMessage(XeonBotInc).catch(e => console.error('Startup message error:', e.message));

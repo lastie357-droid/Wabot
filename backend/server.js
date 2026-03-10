@@ -359,6 +359,24 @@ app.post('/api/instances/:instanceId/restart', async (req, res) => {
   }
 });
 
+// Flag bot as offline (called by bot when connection fails)
+app.post('/api/bot/:instanceId/offline', async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+    
+    const result = await executeQuery('UPDATE bot_instances SET status = $1 WHERE id = $2 RETURNING *', 
+      ['offline', instanceId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ detail: 'Instance not found' });
+    }
+    
+    res.json({ success: true, message: 'Bot flagged as offline', bot: result.rows[0] });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 // Toggle bot enabled status
 app.post('/api/instances/:instanceId/enable', async (req, res) => {
   try {

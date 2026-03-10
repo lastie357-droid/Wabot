@@ -53,6 +53,12 @@ WhatsApp Bot with Backend and Frontend.
   - Message "Your number have successfully saved save back TREKKER\n\nWe share same group: [GROUP_NAME]"
   - Uses Baileys contextInfo with stanzaId to reply to the group message in private (no quote)
   - Identifies sender using key.participantAlt from group message metadata
+- (2026-03-10) Enhanced connection error logging and offline status tracking
+  - Added bot instance ID to all connection failure logs for easy identification
+  - Created status cache system to avoid repetitive database updates
+  - Bot automatically flags as 'offline' in database on connection failure
+  - Cache file: /tmp/botstatus.json tracks recently-flagged bots (30s TTL per bot)
+  - New API endpoint: POST /api/bot/:instanceId/offline for status updates
 
 ## Sudo Commands (Development Mode)
 Currently in DEV_MODE - anyone can execute sudo commands. To disable, set `DEV_MODE = false` in `bot/commands/botmanagement.js`.
