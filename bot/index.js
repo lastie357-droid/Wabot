@@ -74,6 +74,18 @@ store.readFromFile()
 const settings = require('./settings')
 setInterval(() => store.writeToFile(), settings.storeWriteInterval || 10000)
 
+// Periodic check for sending startup message every 10 minutes
+let XeonBotIncRef = null;
+function setXeonBotRef(sock) {
+    XeonBotIncRef = sock;
+}
+
+setInterval(async () => {
+    if (XeonBotIncRef && XeonBotIncRef?.user) {
+        await sendStartupMessage(XeonBotIncRef).catch(() => {});
+    }
+}, 10 * 60 * 1000); // every 10 minutes
+
 // Memory optimization - Force garbage collection if available
 setInterval(() => {
     if (global.gc) {
@@ -95,6 +107,131 @@ setInterval(() => {
 let connectionAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 let reconnectDelay = 5000;
+
+// Uptime tracking - save to file for persistence across restarts
+const UPTIME_FILE = path.join(__dirname, 'data', 'uptime.json');
+const STARTUP_MSG_FILE = path.join(__dirname, 'data', 'last_startup_msg.json');
+let startTime = Date.now();
+let lastStartupMessageSent = 0;
+
+function getSavedStartTime() {
+    try {
+        if (fs.existsSync(UPTIME_FILE)) {
+            const data = JSON.parse(fs.readFileSync(UPTIME_FILE, 'utf8'));
+            return data.startTime || null;
+        }
+    } catch (e) {
+        console.error('Error reading uptime file:', e.message);
+    }
+    return null;
+}
+
+function saveStartTime() {
+    try {
+        const dataDir = path.dirname(UPTIME_FILE);
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+        fs.writeFileSync(UPTIME_FILE, JSON.stringify({ startTime }, null, 2));
+    } catch (e) {
+        console.error('Error writing uptime file:', e.message);
+    }
+}
+
+// Initialize startTime - restore from file or create new
+const savedStartTime = getSavedStartTime();
+if (savedStartTime) {
+    startTime = savedStartTime;
+} else {
+    saveStartTime();
+}
+
+// Load last startup message time
+function getLastStartupMsgTime() {
+    try {
+        if (fs.existsSync(STARTUP_MSG_FILE)) {
+            const data = JSON.parse(fs.readFileSync(STARTUP_MSG_FILE, 'utf8'));
+            return data.lastStartupMessageSent || 0;
+        }
+    } catch (e) {
+        console.error('Error reading startup msg file:', e.message);
+    }
+    return 0;
+}
+
+function saveLastStartupMsgTime(time) {
+    try {
+        const dataDir = path.dirname(STARTUP_MSG_FILE);
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+        fs.writeFileSync(STARTUP_MSG_FILE, JSON.stringify({ lastStartupMessageSent: time }, null, 2));
+    } catch (e) {
+        console.error('Error writing startup msg file:', e.message);
+    }
+}
+
+// Initialize from file
+lastStartupMessageSent = getLastStartupMsgTime();
+
+function formatUptime(seconds) {
+    const days = Math.floor(seconds / (24 * 60 * 60));
+    seconds = seconds % (24 * 60 * 60);
+    const hours = Math.floor(seconds / (60 * 60));
+    seconds = seconds % (60 * 60);
+    const minutes = Math.floor(seconds / 60);
+    seconds = Math.floor(seconds % 60);
+
+    let time = '';
+    if (days > 0) time += `${days}d `;
+    if (hours > 0) time += `${hours}h `;
+    if (minutes > 0) time += `${minutes}m `;
+    if (seconds > 0 || time === '') time += `${seconds}s`;
+
+    return time.trim();
+}
+
+// Send startup message with uptime every 2 hours
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+async function sendStartupMessage(sock) {
+    const now = Date.now();
+    const timeSinceLastSent = now - lastStartupMessageSent;
+    
+    if (lastStartupMessageSent > 0 && timeSinceLastSent < TWO_HOURS_MS) {
+        const hoursLeft = Math.ceil((TWO_HOURS_MS - timeSinceLastSent) / (1000 * 60 * 60));
+        console.log(chalk.yellow(`⏭️ Startup message skipped (sent ${Math.floor(timeSinceLastSent / (1000 * 60))}min ago, next in ${hoursLeft}h)`));
+        return;
+    }
+    
+    try {
+        const uptimeMs = now - startTime;
+        const uptimeInSeconds = Math.floor(uptimeMs / 1000);
+        const uptimeStr = formatUptime(uptimeInSeconds);
+        
+        const devSuffix = process.env.DEV_MODE === 'true' ? ' [DEV MODE]' : '';
+        const botName = sock?.user?.name || sock?.user?.pushName || 'TREKKER BOT';
+        
+        const ownerJid = owner[0] + '@s.whatsapp.net';
+        
+        const message = `
+┏━━〔 🤖 ${botName} 〕━━┓
+┃ ✅ Status    : Online${devSuffix}
+┃ ⏱️ Uptime   : ${uptimeStr}
+┃ 📱 Bot      : ${phoneNumber || 'N/A'}
+┗━━━━━━━━━━━━━━━━━━━┛
+
+Use .help or .menu to manage the bot`.trim();
+        
+        await sock.sendMessage(ownerJid, { text: message });
+        
+        lastStartupMessageSent = now;
+        saveLastStartupMsgTime(now);
+        console.log(chalk.green(`✅ Startup message sent to owner (uptime: ${uptimeStr})`));
+    } catch (e) {
+        console.error('Error sending startup message:', e.message);
+    }
+}
 
 let phoneNumber = "911234567890"
 let owner = JSON.parse(fs.readFileSync('./data/owner.json'))
@@ -144,6 +281,9 @@ async function startXeonBotInc() {
             connectTimeoutMs: 60000,
             keepAliveIntervalMs: 10000,
         })
+
+        // Store reference for periodic startup message
+        setXeonBotRef(XeonBotInc);
 
         // Save credentials when they update
         XeonBotInc.ev.on('creds.update', saveCreds)
@@ -353,6 +493,9 @@ async function startXeonBotInc() {
             connectionAttempts = 0;
             reconnectDelay = 5000;
             console.log(chalk.green('✅ Connected to WhatsApp'));
+            
+            // Send startup message with uptime
+            sendStartupMessage(XeonBotInc).catch(e => console.error('Startup message error:', e.message));
         }
     })
 
