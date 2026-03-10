@@ -460,26 +460,26 @@ async function startXeonBotInc() {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401;
             
-            console.log(chalk.red(`Connection closed due to ${lastDisconnect?.error}, reconnecting ${shouldReconnect}`));
+            console.log(chalk.red(`[${instanceId}] Connection closed due to ${lastDisconnect?.error}, reconnecting ${shouldReconnect}`));
             
             connectionAttempts++;
             
             // Check if we should stop reconnecting
             if (connectionAttempts >= MAX_RECONNECT_ATTEMPTS) {
-                console.log(chalk.red(`❌ Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Exiting...`));
+                console.log(chalk.red(`[${instanceId}] ❌ Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Exiting...`));
                 process.exit(1);
             }
             
             // Exponential backoff: 5s, 10s, 20s, 40s, 80s...
             reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-            console.log(chalk.yellow(`Reconnecting in ${reconnectDelay/1000}s (attempt ${connectionAttempts}/${MAX_RECONNECT_ATTEMPTS})...`));
+            console.log(chalk.yellow(`[${instanceId}] Reconnecting in ${reconnectDelay/1000}s (attempt ${connectionAttempts}/${MAX_RECONNECT_ATTEMPTS})...`));
             
             if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                 try {
                     rmSync(sessionDir, { recursive: true, force: true });
-                    console.log(chalk.yellow('Session deleted - will retry with fresh session...'));
+                    console.log(chalk.yellow(`[${instanceId}] Session deleted - will retry with fresh session...`));
                 } catch (error) {
-                    console.error('Error deleting session:', error);
+                    console.error(`[${instanceId}] Error deleting session:`, error);
                 }
             }
             
