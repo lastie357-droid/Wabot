@@ -20,6 +20,9 @@
   ],
   "author": "",
   "license": "ISC",
+  "npm": {
+    "legacy-peer-deps": true
+  },
   "dependencies": {
     "@adiwajshing/keyed-db": "^0.2.4",
     "@bochilteam/scraper": "^5.0.1",
