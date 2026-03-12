@@ -2120,62 +2120,11 @@ app.post('/pair', async (req, res) => {
       return res.send(generatePairingResultHTML(null, 'Invalid phone number length. Please include country code.'));
     }
     
-    let instanceId, port, botName;
-    const existing = await executeQuery('SELECT * FROM bot_instances WHERE phone_number = $1', [cleanPhone]);
+    // Generate a temporary instanceId for pairing process (actual bot will be created in DB after session is received)
+    const tempInstanceId = 'pair_' + uuidv4().substring(0, 8);
+    const botName = name;
     
-    if (existing.rows.length > 0) {
-      const existingBot = existing.rows[0];
-      const botStatus = existingBot.status;
-      const botStartStatus = existingBot.start_status;
-      
-      // Check if bot is already connected or online in database
-      // Block pairing only if bot process is actually running AND status is connected
-      const isProcessRunning = botProcesses[existingBot.id] && !botProcesses[existingBot.id].killed;
-      if ((botStatus === 'connected' || botStatus === 'online') && isProcessRunning) {
-        return res.send(generatePairingResultHTML(null, 'This bot is already connected and active in the system. No re-pairing needed. Please use the existing connection.'));
-      }
-      
-      // Bot exists but is offline, connecting, or pairing - proceed with re-pairing
-      const botDir = path.join(__dirname, '..', 'bot');
-      const sessionDir = path.join(botDir, 'instances', existingBot.id, 'session');
-      
-      instanceId = existingBot.id;
-      port = existingBot.port || getNextPort();
-      botName = existingBot.name;
-      
-      console.log(chalk.yellow(`[PAIR-FORM] Re-pairing existing bot ${instanceId} (status: ${botStatus}, start_status: ${botStartStatus})`));
-      
-      await stopInstance(instanceId);
-      
-      if (fs.existsSync(sessionDir)) {
-        fs.rmSync(sessionDir, { recursive: true, force: true });
-      }
-      fs.mkdirSync(sessionDir, { recursive: true });
-      
-      await executeQuery('UPDATE bot_instances SET status = $1, port = $2 WHERE id = $3', ['pairing', port, instanceId]);
-      
-      // Schedule bot to start automatically after 3 minutes (pairing timeout)
-      schedulePairingBotStart(instanceId, cleanPhone, port);
-      
-    } else {
-      const targetServer = await findAvailableServer();
-      instanceId = uuidv4().substring(0, 8);
-      port = getNextPort();
-      botName = name;
-      
-      await executeQuery(
-        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name, port) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [instanceId, name, cleanPhone, 'new', 'new', targetServer, port]
-      );
-      
-      const botDir = path.join(__dirname, '..', 'bot');
-      const instanceDir = path.join(botDir, 'instances', instanceId);
-      fs.mkdirSync(path.join(instanceDir, 'session'), { recursive: true });
-      fs.mkdirSync(path.join(instanceDir, 'data'), { recursive: true });
-      
-      // Schedule bot to start automatically after 3 minutes (pairing timeout)
-      schedulePairingBotStart(instanceId, cleanPhone, port);
-    }
+    console.log(chalk.yellow(`[PAIR-FORM] Starting pairing for ${cleanPhone} (tempId: ${tempInstanceId})`));
     
     // Start globalpair if not running
     await startGlobalPairServer();
@@ -2184,13 +2133,13 @@ app.post('/pair', async (req, res) => {
     const pairingServerUrl = 'http://localhost:9000';
     
     try {
-      const response = await axios.get(`${pairingServerUrl}/?number=${cleanPhone}&instanceId=${instanceId}`, {
+      const response = await axios.get(`${pairingServerUrl}/?number=${cleanPhone}&instanceId=${tempInstanceId}&botName=${encodeURIComponent(botName)}`, {
         timeout: 120000
       });
       
       if (response.data && response.data.code) {
-        console.log(chalk.green(`[PAIR-FORM] Generated code for ${instanceId}: ${response.data.code}`));
-        return res.send(generatePairingResultHTML(response.data.code, null, botName, cleanPhone, instanceId));
+        console.log(chalk.green(`[PAIR-FORM] Generated code for ${tempInstanceId}: ${response.data.code}`));
+        return res.send(generatePairingResultHTML(response.data.code, null, botName, cleanPhone, tempInstanceId));
       }
     } catch (e) {
       console.error('Pairing error:', e.message);
