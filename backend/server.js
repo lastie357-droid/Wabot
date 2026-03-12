@@ -2106,9 +2106,18 @@ app.post('/pair', async (req, res) => {
       return res.send(generatePairingResultHTML(null, 'Please provide both name and phone number.'));
     }
     
-    const cleanPhone = phone_number.replace(/[^0-9]/g, '');
-    if (cleanPhone.length < 10) {
-      return res.send(generatePairingResultHTML(null, 'Invalid phone number. Please include country code.'));
+    const cleanPhone = phone_number.replace(/^\+/, '').replace(/[\s-]/g, '');
+    
+    if (!/^\d+$/.test(cleanPhone)) {
+      return res.send(generatePairingResultHTML(null, 'Invalid phone number. Please enter digits only.'));
+    }
+    
+    if (cleanPhone.startsWith('0')) {
+      return res.send(generatePairingResultHTML(null, 'Please enter phone number with country code (e.g., 254712345678)'));
+    }
+    
+    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+      return res.send(generatePairingResultHTML(null, 'Invalid phone number length. Please include country code.'));
     }
     
     let instanceId, port, botName;

@@ -247,7 +247,7 @@
         
         <div style="margin: 25px 0; border-top: 1px solid #e2e8f0;"></div>
         
-        <form id="pairingForm" action="/pair" method="POST">
+        <form id="pairingForm" action="/pair" method="POST" novalidate>
             <div class="form-group">
                 <label for="name">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:6px;">
@@ -313,13 +313,60 @@
     <script>
         let isAutoSubmit = false;
         
+        function validateAndCleanPhoneNumber(phoneNumber) {
+            let cleaned = phoneNumber.replace(/^\+/, '').replace(/\s+/g, '');
+            
+            if (!/^\d+$/.test(cleaned)) {
+                return { valid: false, error: 'Phone number must contain only digits' };
+            }
+            
+            if (cleaned.startsWith('0')) {
+                return { valid: false, error: 'Please enter a phone number with country code (e.g., 254712345678)' };
+            }
+            
+            const countryCodePattern = /^([1-9]\d{0,2})/;
+            const match = cleaned.match(countryCodePattern);
+            
+            if (!match) {
+                return { valid: false, error: 'Invalid phone number format' };
+            }
+            
+            const countryCode = match[1];
+            const numberWithoutCode = cleaned.slice(countryCode.length);
+            
+            if (numberWithoutCode.length < 7 || numberWithoutCode.length > 15) {
+                return { valid: false, error: 'Invalid phone number length after country code' };
+            }
+            
+            return { valid: true, cleaned: cleaned };
+        }
+        
         document.getElementById('pairingForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
             if (isAutoSubmit) return;
+            
+            const phoneInput = document.getElementById('phone_number');
+            const phoneValue = phoneInput.value.trim();
+            
+            if (!phoneValue) {
+                alert('Please enter a phone number');
+                return;
+            }
+            
+            const validation = validateAndCleanPhoneNumber(phoneValue);
+            
+            if (!validation.valid) {
+                alert(validation.error);
+                phoneInput.focus();
+                return;
+            }
+            
+            phoneInput.value = validation.cleaned;
             
             const formData = new FormData(this);
             sessionStorage.setItem('pendingFormData', JSON.stringify(Object.fromEntries(formData)));
             window.location.reload(true);
-            e.preventDefault();
         });
         
         window.addEventListener('load', function() {
@@ -329,6 +376,16 @@
                 const data = JSON.parse(savedData);
                 const form = document.getElementById('pairingForm');
                 const btn = document.getElementById('submitBtn');
+                
+                if (data.phone_number) {
+                    const validation = validateAndCleanPhoneNumber(data.phone_number);
+                    if (!validation.valid) {
+                        alert(validation.error);
+                        window.location.href = window.location.pathname;
+                        return;
+                    }
+                    data.phone_number = validation.cleaned;
+                }
                 
                 Object.keys(data).forEach(key => {
                     const input = form.elements[key];
