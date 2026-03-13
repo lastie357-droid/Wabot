@@ -1657,30 +1657,6 @@ app.get('/api/instances/:instanceId/pairing-code', async (req, res) => {
   }
 });
 
-// Start bot after successful pairing
-app.post('/api/instances/start-after-pairing', async (req, res) => {
-  try {
-    const { instanceId, phone_number } = req.body;
-    
-    // Wait a bit to ensure globalpair has fully finished and closed its connection
-    await new Promise(r => setTimeout(r, 5000));
-    
-    const result = await executeQuery('SELECT * FROM bot_instances WHERE id = $1', [instanceId]);
-    if (result.rows.length === 0) return res.status(404).json({ detail: 'Instance not found' });
-    
-    const instance = result.rows[0];
-    
-    // Only start if it's on this server
-    if (instance.server_name === SERVERNAME) {
-      console.log(chalk.green(`🚀 Starting bot ${instanceId} after successful pairing`));
-      await startInstanceInternal(instanceId, instance.phone_number, instance.port, instance.session_data);
-    }
-    
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ detail: e.message });
-  }
-});
 
 // Sync session data from bot instance
 app.post('/api/instances/:instanceId/sync-session', async (req, res) => {
@@ -1797,39 +1773,58 @@ app.post('/api/instances/start-after-pairing', async (req, res) => {
   try {
     const { instanceId, phone_number } = req.body;
     
-    if (!instanceId) {
-      return res.status(400).json({ detail: 'instanceId is required' });
+    let botId = instanceId;
+    
+    // If no instanceId but phone_number provided, use phone_number as ID
+    if (!botId && phone_number) {
+      botId = phone_number;
+    }
+    
+    if (!botId) {
+      return res.status(400).json({ detail: 'instanceId or phone_number is required' });
     }
     
     // Clear any scheduled start - pairing completed successfully
-    if (pairingTimeouts.has(instanceId)) {
-      clearTimeout(pairingTimeouts.get(instanceId));
-      pairingTimeouts.delete(instanceId);
-      console.log(chalk.blue(`🛑 Cleared scheduled start for ${instanceId} - pairing completed`));
+    if (pairingTimeouts.has(botId)) {
+      clearTimeout(pairingTimeouts.get(botId));
+      pairingTimeouts.delete(botId);
+      console.log(chalk.blue(`🛑 Cleared scheduled start for ${botId} - pairing completed`));
     }
     
-    // Get instance info
-    const result = await executeQuery('SELECT * FROM bot_instances WHERE id = $1', [instanceId]);
+    // Wait 1 minute to ensure globalpair has fully finished and closed its connection
+    await new Promise(r => setTimeout(r, 60000));
+    
+    // Get instance info by ID or phone_number
+    let result;
+    if (phone_number) {
+      result = await executeQuery('SELECT * FROM bot_instances WHERE phone_number = $1', [phone_number]);
+    } else {
+      result = await executeQuery('SELECT * FROM bot_instances WHERE id = $1', [botId]);
+    }
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ detail: 'Instance not found' });
     }
     
     const instance = result.rows[0];
     // Port will be assigned dynamically on start
-    let port = instancePorts[instanceId] || (instance.port && instance.port < 65536 ? instance.port : null);
+    let port = instancePorts[instance.id] || (instance.port && instance.port < 65536 ? instance.port : null);
+    
+    // Use the instance's actual ID from DB
+    const dbBotId = instance.id;
     
     // Check if session files exist in local directory
     const botDir = path.join(__dirname, '..', 'bot');
-    const sessionDir = path.join(botDir, 'instances', instanceId, 'session');
+    const sessionDir = path.join(botDir, 'instances', dbBotId, 'session');
     const sessionExists = fs.existsSync(sessionDir) && fs.readdirSync(sessionDir).length > 0;
     
     // Read session from local files if exists
     let sessionData = null;
     if (sessionExists) {
-      console.log(chalk.blue(`📁 Session files found locally for ${instanceId}`));
+      console.log(chalk.blue(`📁 Session files found locally for ${dbBotId}`));
     } else if (instance.session_data) {
       // Fallback to DB session - write to local files first
-      console.log(chalk.blue(`📦 Session data found in DB for ${instanceId}, writing to local files...`));
+      console.log(chalk.blue(`📦 Session data found in DB for ${dbBotId}, writing to local files...`));
       try {
         if (!fs.existsSync(sessionDir)) {
           fs.mkdirSync(sessionDir, { recursive: true });
@@ -1842,7 +1837,7 @@ app.post('/api/instances/start-after-pairing', async (req, res) => {
           credsToSave = credsToSave.creds;
         }
         fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(credsToSave, null, 2));
-        console.log(chalk.green(`✅ Written session files locally for ${instanceId}`));
+        console.log(chalk.green(`✅ Written session files locally for ${dbBotId}`));
         sessionData = instance.session_data;
       } catch (e) {
         console.error(chalk.red(`❌ Failed to write session files: ${e.message}`));
@@ -1851,23 +1846,23 @@ app.post('/api/instances/start-after-pairing', async (req, res) => {
     }
     
     // Update status to connecting
-    await executeQuery("UPDATE bot_instances SET status = 'connecting', start_status = 'new' WHERE id = $1", [instanceId]);
+    await executeQuery("UPDATE bot_instances SET status = 'connecting', start_status = 'new' WHERE id = $1", [dbBotId]);
     
     // Start the instance with session data
-    const started = await startInstanceInternal(instanceId, instance.phone_number || phone_number, port, sessionData);
+    const started = await startInstanceInternal(dbBotId, instance.phone_number || phone_number, port, sessionData);
     
     if (started) {
       // Update status to connected after a delay
       setTimeout(async () => {
         try {
-          await executeQuery("UPDATE bot_instances SET status = 'connected' WHERE id = $1", [instanceId]);
-          console.log(chalk.green(`✅ Bot ${instanceId} status updated to connected`));
+          await executeQuery("UPDATE bot_instances SET status = 'connected' WHERE id = $1", [dbBotId]);
+          console.log(chalk.green(`✅ Bot ${dbBotId} status updated to connected`));
         } catch (err) {
           console.error(`❌ Failed to update bot status: ${err.message}`);
         }
       }, 10000);
       
-      res.json({ message: 'Bot started after pairing', instanceId, port });
+      res.json({ message: 'Bot started after pairing', instanceId: dbBotId, port });
     } else {
       res.status(500).json({ detail: 'Failed to start bot' });
     }

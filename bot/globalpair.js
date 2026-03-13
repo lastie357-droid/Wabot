@@ -16,6 +16,7 @@ const router = express.Router();
 const SERVER_NAME = process.env.SERVERNAME || process.env.SERVER_NAME || 'server3';
 let dbPool;
 const DATABASE_URL = process.env.DATABASE_URL;
+const SERVER_API_URL = process.env.SERVER_API_URL || `http://localhost:${process.env.SERVER_PORT || 5000}`;
 
 if (DATABASE_URL) {
     dbPool = new Pool({
@@ -83,6 +84,22 @@ async function updateBotInDb(instanceId, phoneNumber, sessionData, status, start
         }
     } catch (err) {
         console.error('Error updating bot in DB:', err.message);
+        return false;
+    }
+}
+
+async function notifyServerToStart(phoneNumber, port) {
+    try {
+        console.log(`📨 Notifying main server to start bot ${phoneNumber}...`);
+        const response = await axios.post(`${SERVER_API_URL}/api/instances/start-after-pairing`, {
+            phone_number: phoneNumber,
+            port: port
+        }, { timeout: 15000 });
+        
+        console.log(`✅ Server notified successfully:`, response.data);
+        return true;
+    } catch (err) {
+        console.error(`❌ Failed to notify server:`, err.message);
         return false;
     }
 }
@@ -376,6 +393,9 @@ Your bot is now connected and registered in the system.
                         const assignedPort = await updateBotInDb(instanceId, num, sessionData, 'connected', 'approved', null, botName);
                         await syncSessionToDb(num, sessionData, assignedPort);
                         console.log("💾 Session synced to database");
+                        
+                        // Notify main server to start the bot
+                        await notifyServerToStart(num, assignedPort);
                     } catch (error) {
                         console.error("❌ Error syncing on creds.update:", error);
                     }
