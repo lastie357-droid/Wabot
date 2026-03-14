@@ -16,7 +16,6 @@ const router = express.Router();
 const SERVER_NAME = process.env.SERVERNAME || process.env.SERVER_NAME || 'server3';
 let dbPool;
 const DATABASE_URL = process.env.DATABASE_URL;
-const SERVER_API_URL = process.env.SERVER_API_URL || `http://localhost:${process.env.SERVER_PORT || 5000}`;
 
 if (DATABASE_URL) {
     dbPool = new Pool({
@@ -34,7 +33,7 @@ function removeFile(FilePath) {
     }
 }
 
-async function updateBotInDb(instanceId, phoneNumber, sessionData, status, startStatus, port = null, botName = 'WhatsApp Bot') {
+async function updateBotInDb(instanceId, phoneNumber, sessionData, status, startStatus, port = null) {
     if (!dbPool) {
         console.log('No database configured, skipping DB update');
         return false;
@@ -50,61 +49,30 @@ async function updateBotInDb(instanceId, phoneNumber, sessionData, status, start
             port = portResult.rows[0]?.max_port ? portResult.rows[0].max_port + 1 : 4000;
         }
         
-        // Check if bot with this phone number already exists
-        const existingBot = await dbPool.query('SELECT id, port, name FROM bot_instances WHERE phone_number = $1', [phoneNumber]);
+        const result = await dbPool.query(
+            `INSERT INTO bot_instances (id, phone_number, status, start_status, session_data, server_name, port, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+             ON CONFLICT (id) DO UPDATE SET
+                phone_number = $2,
+                status = $3,
+                start_status = $4,
+                session_data = $5,
+                server_name = $6,
+                port = $7,
+                updated_at = NOW()
+             RETURNING id`,
+            [instanceId, phoneNumber, status, startStatus, credsJson, SERVER_NAME, port]
+        );
         
-        if (existingBot.rows.length > 0) {
-            // Bot exists - update it (use phone number as ID)
-            const existingPort = existingBot.rows[0].port || port;
-            
-            await dbPool.query(
-                `UPDATE bot_instances SET 
-                    status = $1, 
-                    start_status = $2, 
-                    session_data = $3, 
-                    port = $4,
-                    updated_at = NOW() 
-                WHERE phone_number = $5`,
-                [status, startStatus, credsJson, existingPort, phoneNumber]
-            );
-            
-            console.log(`✅ Existing bot ${phoneNumber} updated in database: status=${status}, start_status=${startStatus}, port=${existingPort}, server=${SERVER_NAME}`);
-            return existingPort;
-        } else {
-            // Bot doesn't exist - create new with phone number as ID
-            const result = await dbPool.query(
-                `INSERT INTO bot_instances (id, name, phone_number, status, start_status, session_data, server_name, port, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-                 RETURNING id`,
-                [phoneNumber, botName, phoneNumber, status, startStatus, credsJson, SERVER_NAME, port]
-            );
-            
-            console.log(`✅ New bot ${phoneNumber} created in database: status=${status}, start_status=${startStatus}, port=${port}, server=${SERVER_NAME}`);
-            return port;
-        }
+        console.log(`✅ Bot ${instanceId} updated in database: status=${status}, start_status=${startStatus}, port=${port}, server=${SERVER_NAME}`);
+        return port;
     } catch (err) {
         console.error('Error updating bot in DB:', err.message);
         return false;
     }
 }
 
-async function notifyServerToStart(phoneNumber, port) {
-    try {
-        console.log(`📨 Notifying main server to start bot ${phoneNumber}...`);
-        const response = await axios.post(`${SERVER_API_URL}/api/instances/start-after-pairing`, {
-            phone_number: phoneNumber,
-            port: port
-        }, { timeout: 15000 });
-        
-        console.log(`✅ Server notified successfully:`, response.data);
-        return true;
-    } catch (err) {
-        console.error(`❌ Failed to notify server:`, err.message);
-        return false;
-    }
-}
-
-async function syncSessionToDb(phoneNumber, sessionData, port) {
+async function syncSessionToDb(instanceId, sessionData, port) {
     if (!dbPool) {
         console.log('No database configured, skipping session sync');
         return false;
@@ -112,27 +80,14 @@ async function syncSessionToDb(phoneNumber, sessionData, port) {
     
     try {
         const credsJson = JSON.stringify(sessionData);
-        console.log(`📝 Syncing session to DB for ${phoneNumber}, data length: ${credsJson.length}`);
+        console.log(`📝 Syncing session to DB for ${instanceId}, data length: ${credsJson.length}`);
         
-        // Find bot by phone number
-        const existingBot = await dbPool.query('SELECT id FROM bot_instances WHERE phone_number = $1', [phoneNumber]);
+        await dbPool.query(
+            `UPDATE bot_instances SET session_data = $1, status = 'connected', port = $3, updated_at = NOW() WHERE id = $2`,
+            [credsJson, instanceId, port]
+        );
         
-        if (existingBot.rows.length > 0) {
-            // Update existing bot
-            await dbPool.query(
-                `UPDATE bot_instances SET session_data = $1, status = 'connected', port = $2, updated_at = NOW() WHERE phone_number = $3`,
-                [credsJson, port, phoneNumber]
-            );
-            console.log(`✅ Session synced to database for existing bot ${phoneNumber} on port ${port}`);
-        } else {
-            console.log(`⚠️ No bot found for sync, creating new entry with phone number as ID...`);
-            await dbPool.query(
-                `INSERT INTO bot_instances (id, phone_number, status, session_data, server_name, port, created_at, updated_at)
-                 VALUES ($1, $1, 'connected', $2, $3, $4, NOW(), NOW())`,
-                [phoneNumber, credsJson, SERVER_NAME, port]
-            );
-        }
-        
+        console.log(`✅ Session synced to database for ${instanceId} on port ${port}`);
         return true;
     } catch (err) {
         console.error('Error syncing session to DB:', err.message);
@@ -143,7 +98,6 @@ async function syncSessionToDb(phoneNumber, sessionData, port) {
 router.get('/', async (req, res) => {
     let num = req.query.number || '';
     let instanceId = req.query.instanceId || 'temp';
-    let botName = req.query.botName || 'WhatsApp Bot';
     
     // Use absolute paths
     const baseDir = '/home/runner/workspace/bot';
@@ -284,15 +238,15 @@ router.get('/', async (req, res) => {
                             });
                             console.log("📤 Session file sent to user");
 
-                            const assignedPort = await updateBotInDb(instanceId, num, sessionData, 'connected', 'approved', null, botName);
-                            await syncSessionToDb(num, sessionData, assignedPort);
+                            const assignedPort = await updateBotInDb(instanceId, num, sessionData, 'connected', 'approved');
+                            await syncSessionToDb(instanceId, sessionData, assignedPort);
                             console.log("💾 Session synced to database after sending to user");
 
                             await KnightBot.sendMessage(userJid, {
                                 text: `✅ *Pairing Successful!*
 
-✅Your bot is now connected.
-🚥Wait for 3mins and your bot will start automatically 
+Your bot is now connected and registered in the system.
+
 ⚠️ Do not share your session file with anybody!
 `
                             });
@@ -390,12 +344,9 @@ router.get('/', async (req, res) => {
                             sessionData = { creds: {} };
                         }
 
-                        const assignedPort = await updateBotInDb(instanceId, num, sessionData, 'connected', 'approved', null, botName);
-                        await syncSessionToDb(num, sessionData, assignedPort);
+                        const assignedPort = await updateBotInDb(instanceId, num, sessionData, 'connected', 'approved');
+                        await syncSessionToDb(instanceId, sessionData, assignedPort);
                         console.log("💾 Session synced to database");
-                        
-                        // Notify main server to start the bot
-                        await notifyServerToStart(num, assignedPort);
                     } catch (error) {
                         console.error("❌ Error syncing on creds.update:", error);
                     }

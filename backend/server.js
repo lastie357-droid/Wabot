@@ -1657,6 +1657,30 @@ app.get('/api/instances/:instanceId/pairing-code', async (req, res) => {
   }
 });
 
+// Start bot after successful pairing
+app.post('/api/instances/start-after-pairing', async (req, res) => {
+  try {
+    const { instanceId, phone_number } = req.body;
+    
+    // Wait a bit to ensure globalpair has fully finished and closed its connection
+    await new Promise(r => setTimeout(r, 5000));
+    
+    const result = await executeQuery('SELECT * FROM bot_instances WHERE id = $1', [instanceId]);
+    if (result.rows.length === 0) return res.status(404).json({ detail: 'Instance not found' });
+    
+    const instance = result.rows[0];
+    
+    // Only start if it's on this server
+    if (instance.server_name === SERVERNAME) {
+      console.log(chalk.green(`🚀 Starting bot ${instanceId} after successful pairing`));
+      await startInstanceInternal(instanceId, instance.phone_number, instance.port, instance.session_data);
+    }
+    
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
 
 // Sync session data from bot instance
 app.post('/api/instances/:instanceId/sync-session', async (req, res) => {
@@ -1773,58 +1797,39 @@ app.post('/api/instances/start-after-pairing', async (req, res) => {
   try {
     const { instanceId, phone_number } = req.body;
     
-    let botId = instanceId;
-    
-    // If no instanceId but phone_number provided, use phone_number as ID
-    if (!botId && phone_number) {
-      botId = phone_number;
-    }
-    
-    if (!botId) {
-      return res.status(400).json({ detail: 'instanceId or phone_number is required' });
+    if (!instanceId) {
+      return res.status(400).json({ detail: 'instanceId is required' });
     }
     
     // Clear any scheduled start - pairing completed successfully
-    if (pairingTimeouts.has(botId)) {
-      clearTimeout(pairingTimeouts.get(botId));
-      pairingTimeouts.delete(botId);
-      console.log(chalk.blue(`🛑 Cleared scheduled start for ${botId} - pairing completed`));
+    if (pairingTimeouts.has(instanceId)) {
+      clearTimeout(pairingTimeouts.get(instanceId));
+      pairingTimeouts.delete(instanceId);
+      console.log(chalk.blue(`🛑 Cleared scheduled start for ${instanceId} - pairing completed`));
     }
     
-    // Wait 1 minute to ensure globalpair has fully finished and closed its connection
-    await new Promise(r => setTimeout(r, 60000));
-    
-    // Get instance info by ID or phone_number
-    let result;
-    if (phone_number) {
-      result = await executeQuery('SELECT * FROM bot_instances WHERE phone_number = $1', [phone_number]);
-    } else {
-      result = await executeQuery('SELECT * FROM bot_instances WHERE id = $1', [botId]);
-    }
-    
+    // Get instance info
+    const result = await executeQuery('SELECT * FROM bot_instances WHERE id = $1', [instanceId]);
     if (result.rows.length === 0) {
       return res.status(404).json({ detail: 'Instance not found' });
     }
     
     const instance = result.rows[0];
     // Port will be assigned dynamically on start
-    let port = instancePorts[instance.id] || (instance.port && instance.port < 65536 ? instance.port : null);
-    
-    // Use the instance's actual ID from DB
-    const dbBotId = instance.id;
+    let port = instancePorts[instanceId] || (instance.port && instance.port < 65536 ? instance.port : null);
     
     // Check if session files exist in local directory
     const botDir = path.join(__dirname, '..', 'bot');
-    const sessionDir = path.join(botDir, 'instances', dbBotId, 'session');
+    const sessionDir = path.join(botDir, 'instances', instanceId, 'session');
     const sessionExists = fs.existsSync(sessionDir) && fs.readdirSync(sessionDir).length > 0;
     
     // Read session from local files if exists
     let sessionData = null;
     if (sessionExists) {
-      console.log(chalk.blue(`📁 Session files found locally for ${dbBotId}`));
+      console.log(chalk.blue(`📁 Session files found locally for ${instanceId}`));
     } else if (instance.session_data) {
       // Fallback to DB session - write to local files first
-      console.log(chalk.blue(`📦 Session data found in DB for ${dbBotId}, writing to local files...`));
+      console.log(chalk.blue(`📦 Session data found in DB for ${instanceId}, writing to local files...`));
       try {
         if (!fs.existsSync(sessionDir)) {
           fs.mkdirSync(sessionDir, { recursive: true });
@@ -1837,7 +1842,7 @@ app.post('/api/instances/start-after-pairing', async (req, res) => {
           credsToSave = credsToSave.creds;
         }
         fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(credsToSave, null, 2));
-        console.log(chalk.green(`✅ Written session files locally for ${dbBotId}`));
+        console.log(chalk.green(`✅ Written session files locally for ${instanceId}`));
         sessionData = instance.session_data;
       } catch (e) {
         console.error(chalk.red(`❌ Failed to write session files: ${e.message}`));
@@ -1846,23 +1851,23 @@ app.post('/api/instances/start-after-pairing', async (req, res) => {
     }
     
     // Update status to connecting
-    await executeQuery("UPDATE bot_instances SET status = 'connecting', start_status = 'new' WHERE id = $1", [dbBotId]);
+    await executeQuery("UPDATE bot_instances SET status = 'connecting', start_status = 'new' WHERE id = $1", [instanceId]);
     
     // Start the instance with session data
-    const started = await startInstanceInternal(dbBotId, instance.phone_number || phone_number, port, sessionData);
+    const started = await startInstanceInternal(instanceId, instance.phone_number || phone_number, port, sessionData);
     
     if (started) {
       // Update status to connected after a delay
       setTimeout(async () => {
         try {
-          await executeQuery("UPDATE bot_instances SET status = 'connected' WHERE id = $1", [dbBotId]);
-          console.log(chalk.green(`✅ Bot ${dbBotId} status updated to connected`));
+          await executeQuery("UPDATE bot_instances SET status = 'connected' WHERE id = $1", [instanceId]);
+          console.log(chalk.green(`✅ Bot ${instanceId} status updated to connected`));
         } catch (err) {
           console.error(`❌ Failed to update bot status: ${err.message}`);
         }
       }, 10000);
       
-      res.json({ message: 'Bot started after pairing', instanceId: dbBotId, port });
+      res.json({ message: 'Bot started after pairing', instanceId, port });
     } else {
       res.status(500).json({ detail: 'Failed to start bot' });
     }
@@ -2115,11 +2120,62 @@ app.post('/pair', async (req, res) => {
       return res.send(generatePairingResultHTML(null, 'Invalid phone number length. Please include country code.'));
     }
     
-    // Generate a temporary instanceId for pairing process (actual bot will be created in DB after session is received)
-    const tempInstanceId = 'pair_' + uuidv4().substring(0, 8);
-    const botName = name;
+    let instanceId, port, botName;
+    const existing = await executeQuery('SELECT * FROM bot_instances WHERE phone_number = $1', [cleanPhone]);
     
-    console.log(chalk.yellow(`[PAIR-FORM] Starting pairing for ${cleanPhone} (tempId: ${tempInstanceId})`));
+    if (existing.rows.length > 0) {
+      const existingBot = existing.rows[0];
+      const botStatus = existingBot.status;
+      const botStartStatus = existingBot.start_status;
+      
+      // Check if bot is already connected or online in database
+      // Block pairing only if bot process is actually running AND status is connected
+      const isProcessRunning = botProcesses[existingBot.id] && !botProcesses[existingBot.id].killed;
+      if ((botStatus === 'connected' || botStatus === 'online') && isProcessRunning) {
+        return res.send(generatePairingResultHTML(null, 'This bot is already connected and active in the system. No re-pairing needed. Please use the existing connection.'));
+      }
+      
+      // Bot exists but is offline, connecting, or pairing - proceed with re-pairing
+      const botDir = path.join(__dirname, '..', 'bot');
+      const sessionDir = path.join(botDir, 'instances', existingBot.id, 'session');
+      
+      instanceId = existingBot.id;
+      port = existingBot.port || getNextPort();
+      botName = existingBot.name;
+      
+      console.log(chalk.yellow(`[PAIR-FORM] Re-pairing existing bot ${instanceId} (status: ${botStatus}, start_status: ${botStartStatus})`));
+      
+      await stopInstance(instanceId);
+      
+      if (fs.existsSync(sessionDir)) {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(sessionDir, { recursive: true });
+      
+      await executeQuery('UPDATE bot_instances SET status = $1, port = $2 WHERE id = $3', ['pairing', port, instanceId]);
+      
+      // Schedule bot to start automatically after 3 minutes (pairing timeout)
+      schedulePairingBotStart(instanceId, cleanPhone, port);
+      
+    } else {
+      const targetServer = await findAvailableServer();
+      instanceId = uuidv4().substring(0, 8);
+      port = getNextPort();
+      botName = name;
+      
+      await executeQuery(
+        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name, port) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [instanceId, name, cleanPhone, 'new', 'new', targetServer, port]
+      );
+      
+      const botDir = path.join(__dirname, '..', 'bot');
+      const instanceDir = path.join(botDir, 'instances', instanceId);
+      fs.mkdirSync(path.join(instanceDir, 'session'), { recursive: true });
+      fs.mkdirSync(path.join(instanceDir, 'data'), { recursive: true });
+      
+      // Schedule bot to start automatically after 3 minutes (pairing timeout)
+      schedulePairingBotStart(instanceId, cleanPhone, port);
+    }
     
     // Start globalpair if not running
     await startGlobalPairServer();
@@ -2128,13 +2184,13 @@ app.post('/pair', async (req, res) => {
     const pairingServerUrl = 'http://localhost:9000';
     
     try {
-      const response = await axios.get(`${pairingServerUrl}/?number=${cleanPhone}&instanceId=${tempInstanceId}&botName=${encodeURIComponent(botName)}`, {
+      const response = await axios.get(`${pairingServerUrl}/?number=${cleanPhone}&instanceId=${instanceId}`, {
         timeout: 120000
       });
       
       if (response.data && response.data.code) {
-        console.log(chalk.green(`[PAIR-FORM] Generated code for ${tempInstanceId}: ${response.data.code}`));
-        return res.send(generatePairingResultHTML(response.data.code, null, botName, cleanPhone, tempInstanceId));
+        console.log(chalk.green(`[PAIR-FORM] Generated code for ${instanceId}: ${response.data.code}`));
+        return res.send(generatePairingResultHTML(response.data.code, null, botName, cleanPhone, instanceId));
       }
     } catch (e) {
       console.error('Pairing error:', e.message);
