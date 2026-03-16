@@ -604,7 +604,7 @@ async function initDatabase() {
         port INTEGER,
         pid INTEGER,
         duration_months INTEGER,
-        autoview BOOLEAN DEFAULT false,
+        autoview BOOLEAN DEFAULT true,
         groupautosave BOOLEAN DEFAULT false,
         chatbot_enabled BOOLEAN DEFAULT false,
         chatbot_api_key VARCHAR(500),
