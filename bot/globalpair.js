@@ -33,7 +33,7 @@ function removeFile(FilePath) {
     }
 }
 
-async function updateBotInDb(instanceId, phoneNumber, sessionData, status, startStatus, port = null) {
+async function updateBotInDb(instanceId, phoneNumber, sessionData, status, startStatus) {
     if (!dbPool) {
         console.log('No database configured, skipping DB update');
         return false;
@@ -43,36 +43,29 @@ async function updateBotInDb(instanceId, phoneNumber, sessionData, status, start
         const credsJson = JSON.stringify(sessionData);
         console.log(`📝 Updating bot in DB: ${instanceId}, status: ${status}, sessionData length: ${credsJson.length}`);
         
-        // Get next available port if not provided
-        if (!port) {
-            const portResult = await dbPool.query('SELECT MAX(port) as max_port FROM bot_instances WHERE server_name = $1', [SERVER_NAME]);
-            port = portResult.rows[0]?.max_port ? portResult.rows[0].max_port + 1 : 4000;
-        }
-        
         const result = await dbPool.query(
-            `INSERT INTO bot_instances (id, phone_number, status, start_status, session_data, server_name, port, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+            `INSERT INTO bot_instances (id, phone_number, status, start_status, session_data, server_name, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
              ON CONFLICT (id) DO UPDATE SET
                 phone_number = $2,
                 status = $3,
                 start_status = $4,
                 session_data = $5,
                 server_name = $6,
-                port = $7,
                 updated_at = NOW()
              RETURNING id`,
-            [instanceId, phoneNumber, status, startStatus, credsJson, SERVER_NAME, port]
+            [instanceId, phoneNumber, status, startStatus, credsJson, SERVER_NAME]
         );
         
-        console.log(`✅ Bot ${instanceId} updated in database: status=${status}, start_status=${startStatus}, port=${port}, server=${SERVER_NAME}`);
-        return port;
+        console.log(`✅ Bot ${instanceId} updated in database: status=${status}, start_status=${startStatus}, server=${SERVER_NAME}`);
+        return true;
     } catch (err) {
         console.error('Error updating bot in DB:', err.message);
         return false;
     }
 }
 
-async function syncSessionToDb(instanceId, sessionData, port) {
+async function syncSessionToDb(instanceId, sessionData) {
     if (!dbPool) {
         console.log('No database configured, skipping session sync');
         return false;
@@ -83,11 +76,11 @@ async function syncSessionToDb(instanceId, sessionData, port) {
         console.log(`📝 Syncing session to DB for ${instanceId}, data length: ${credsJson.length}`);
         
         await dbPool.query(
-            `UPDATE bot_instances SET session_data = $1, status = 'connected', port = $3, updated_at = NOW() WHERE id = $2`,
-            [credsJson, instanceId, port]
+            `UPDATE bot_instances SET session_data = $1, status = 'connected', updated_at = NOW() WHERE id = $2`,
+            [credsJson, instanceId]
         );
         
-        console.log(`✅ Session synced to database for ${instanceId} on port ${port}`);
+        console.log(`✅ Session synced to database for ${instanceId}`);
         return true;
     } catch (err) {
         console.error('Error syncing session to DB:', err.message);
@@ -239,7 +232,7 @@ router.get('/', async (req, res) => {
                             console.log("📤 Session file sent to user");
 
                             const assignedPort = await updateBotInDb(instanceId, num, sessionData, 'connected', 'approved');
-                            await syncSessionToDb(instanceId, sessionData, assignedPort);
+                            await syncSessionToDb(instanceId, sessionData);
                             console.log("💾 Session synced to database after sending to user");
 
                             await KnightBot.sendMessage(userJid, {
@@ -345,7 +338,7 @@ Your bot is now connected and registered in the system.
                         }
 
                         const assignedPort = await updateBotInDb(instanceId, num, sessionData, 'connected', 'approved');
-                        await syncSessionToDb(instanceId, sessionData, assignedPort);
+                        await syncSessionToDb(instanceId, sessionData);
                         console.log("💾 Session synced to database");
                     } catch (error) {
                         console.error("❌ Error syncing on creds.update:", error);

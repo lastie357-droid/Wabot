@@ -400,6 +400,37 @@ app.post('/api/instances/:instanceId/enable', async (req, res) => {
   }
 });
 
+// Cleanup corrupted port data in database
+app.post('/api/maintenance/cleanup-ports', async (req, res) => {
+  try {
+    const result = await executeQuery('SELECT id, port FROM bot_instances');
+    let cleaned = 0;
+    
+    for (const bot of result.rows) {
+      const port = bot.port;
+      if (port && (typeof port !== 'number' || port > 65535 || port < 1)) {
+        await executeQuery('UPDATE bot_instances SET port = NULL WHERE id = $1', [bot.id]);
+        cleaned++;
+        console.log(chalk.yellow(`🧹 Cleaned corrupted port for bot ${bot.id}: ${port}`));
+      }
+    }
+    
+    res.json({ success: true, message: `Cleaned ${cleaned} corrupted port records` });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// Remove port from all bots (runtime allocation only)
+app.post('/api/maintenance/clear-all-ports', async (req, res) => {
+  try {
+    await executeQuery('UPDATE bot_instances SET port = NULL');
+    res.json({ success: true, message: 'All ports cleared from database. Ports will be allocated at runtime.' });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 // Delete bot from database (for any server)
 app.delete('/api/instances/:instanceId/db', async (req, res) => {
   try {
@@ -1416,14 +1447,14 @@ app.post('/api/instances/pair-new', async (req, res) => {
       }
       // Update existing record instead of creating new
       await executeQuery(
-        'UPDATE bot_instances SET status = $1, start_status = $2, session_data = NULL, server_name = $3, port = $4 WHERE phone_number = $5',
-        ['new', 'new', targetServer, port, phone_number]
+        'UPDATE bot_instances SET status = $1, start_status = $2, session_data = NULL, server_name = $3 WHERE phone_number = $4',
+        ['new', 'new', targetServer, phone_number]
       );
     } else {
       // Create new in database
       await executeQuery(
-        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name, port) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [instanceId, name, phone_number, 'new', 'new', targetServer, port]
+        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name) VALUES ($1, $2, $3, $4, $5, $6)',
+        [instanceId, name, phone_number, 'new', 'new', targetServer]
       );
     }
     
@@ -1504,33 +1535,32 @@ app.post('/api/instances', async (req, res) => {
   try {
     const { name, phone_number, owner_id, auto_start = true } = req.body;
     
-    const existing = await executeQuery('SELECT id, server_name, port FROM bot_instances WHERE phone_number = $1', [phone_number]);
+    const existing = await executeQuery('SELECT id, server_name FROM bot_instances WHERE phone_number = $1', [phone_number]);
     
-    let instanceId, targetServer, port;
+    let instanceId, targetServer;
     
     if (existing.rows.length > 0) {
       instanceId = existing.rows[0].id;
       targetServer = existing.rows[0].server_name;
-      port = existing.rows[0].port || getNextPort();
       
       await stopInstance(instanceId);
       const updateNow = useSQLite ? 'CURRENT_TIMESTAMP' : 'NOW()';
       await executeQuery(`
         UPDATE bot_instances 
-        SET name = $1, owner_id = $2, port = $3, status = 'new', start_status = 'new', updated_at = ${updateNow} 
-        WHERE id = $4
-      `, [name, owner_id, port, instanceId]);
+        SET name = $1, owner_id = $2, status = 'new', start_status = 'new', updated_at = ${updateNow} 
+        WHERE id = $3
+      `, [name, owner_id, instanceId]);
     } else {
       targetServer = await findAvailableServer();
       instanceId = uuidv4().substring(0, 8);
-      port = getNextPort();
       
       await executeQuery(
-        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name, owner_id, port) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [instanceId, name, phone_number, 'new', 'new', targetServer, owner_id, port]
+        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name, owner_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [instanceId, name, phone_number, 'new', 'new', targetServer, owner_id]
       );
     }
 
+    const port = await findFreePort();
     instancePorts[instanceId] = port;
     
     if (targetServer === SERVERNAME && auto_start) {
@@ -2124,7 +2154,8 @@ app.post('/pair', async (req, res) => {
       return res.send(generatePairingResultHTML(null, 'Invalid phone number length. Please include country code.'));
     }
     
-    let instanceId, port, botName;
+    let instanceId, botName;
+    let port;
     const existing = await executeQuery('SELECT * FROM bot_instances WHERE phone_number = $1', [cleanPhone]);
     
     if (existing.rows.length > 0) {
@@ -2144,7 +2175,7 @@ app.post('/pair', async (req, res) => {
       const sessionDir = path.join(botDir, 'instances', existingBot.id, 'session');
       
       instanceId = existingBot.id;
-      port = existingBot.port || getNextPort();
+      port = await findFreePort();
       botName = existingBot.name;
       
       console.log(chalk.yellow(`[PAIR-FORM] Re-pairing existing bot ${instanceId} (status: ${botStatus}, start_status: ${botStartStatus})`));
@@ -2156,7 +2187,7 @@ app.post('/pair', async (req, res) => {
       }
       fs.mkdirSync(sessionDir, { recursive: true });
       
-      await executeQuery('UPDATE bot_instances SET status = $1, port = $2 WHERE id = $3', ['pairing', port, instanceId]);
+      await executeQuery('UPDATE bot_instances SET status = $1 WHERE id = $2', ['pairing', instanceId]);
       
       // Schedule bot to start automatically after 3 minutes (pairing timeout)
       schedulePairingBotStart(instanceId, cleanPhone, port);
@@ -2164,12 +2195,12 @@ app.post('/pair', async (req, res) => {
     } else {
       const targetServer = await findAvailableServer();
       instanceId = uuidv4().substring(0, 8);
-      port = getNextPort();
+      port = await findFreePort();
       botName = name;
       
       await executeQuery(
-        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name, port) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [instanceId, name, cleanPhone, 'new', 'new', targetServer, port]
+        'INSERT INTO bot_instances (id, name, phone_number, status, start_status, server_name) VALUES ($1, $2, $3, $4, $5, $6)',
+        [instanceId, name, cleanPhone, 'new', 'new', targetServer]
       );
       
       const botDir = path.join(__dirname, '..', 'bot');
