@@ -54,6 +54,7 @@
     "gifted-btns": "^1.0.2",
     "gtts": "^0.2.1",
     "human-readable": "^0.2.1",
+    "iconv-lite": "^0.7.2",
     "jimp": "^1.6.0",
     "jsdom": "^22.1.0",
     "libphonenumber-js": "^1.12.38",
